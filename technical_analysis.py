@@ -72,29 +72,46 @@ def is_cup_and_handle(df):
 
 def is_range_breakout(df):
     """
-    Range Breakout: Consolidation for 1 month+ within 20% range, then breaking out.
+    Range Breakout (Updated):
+    - High formed and not broken for at least 20 trading sessions.
+    - Price dips by max 25% from that high during this period.
+    - Eventually current price breaks that high.
     """
-    if len(df) < 30: return False
+    if len(df) < 25: return False
 
-    # Ensure we are working with a 1D Series
     close_prices = df['Close']
     if isinstance(close_prices, pd.DataFrame):
         close_prices = close_prices.iloc[:, 0]
 
-    # Last 20-30 days for consolidation range
-    consolidation_period = close_prices.iloc[-30:-1]
-    highest = consolidation_period.max()
-    lowest = consolidation_period.min()
+    # We need to find a peak that hasn't been broken for at least 20 sessions
+    # and check the criteria against the current price breakout.
 
-    # Range check
-    price_range_pct = (highest - lowest) / lowest
-    if (price_range_pct > 0.20).any() if isinstance(price_range_pct, pd.Series) else price_range_pct > 0.20:
-        return False
+    # Look back for potential peaks between 21 and 60 sessions ago
+    for lookback in range(21, min(61, len(df))):
+        peak_idx = -lookback
+        peak_price = close_prices.iloc[peak_idx]
 
-    # Breakout check
-    current_price = close_prices.iloc[-1]
-    if (current_price > highest).any() if isinstance(current_price, pd.Series) else current_price > highest:
-        return True
+        # 1. Check if this peak was a local high (higher than immediate neighbors)
+        if peak_price < close_prices.iloc[peak_idx-1] or peak_price < close_prices.iloc[peak_idx+1]:
+            continue
+
+        # 2. Check if this high was NOT broken for at least 20 sessions after it was formed
+        period_after_peak = close_prices.iloc[peak_idx+1:-1]
+        if len(period_after_peak) < 20: continue
+
+        if (period_after_peak.max() > peak_price).any():
+            continue
+
+        # 3. Check if the price dipped by max 25% from that high during this period
+        period_min = period_after_peak.min()
+        dip_pct = (peak_price - period_min) / peak_price
+        if dip_pct > 0.25:
+            continue
+
+        # 4. Breakout check: current price breaks the peak price
+        current_price = close_prices.iloc[-1]
+        if current_price > peak_price:
+            return True
 
     return False
 
