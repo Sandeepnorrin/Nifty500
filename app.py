@@ -8,7 +8,7 @@ from technical_analysis import calculate_ema, is_cup_and_handle, is_range_breako
 from sector_mapping import get_sector_index
 import time
 
-def create_chart(df, symbol, timeframe="Daily"):
+def create_chart(df, symbol, timeframe="Daily", regions=None):
     if df.empty:
         return None
 
@@ -33,6 +33,18 @@ def create_chart(df, symbol, timeframe="Daily"):
     # Volume chart
     colors = ['red' if row['Open'] > row['Close'] else 'green' for index, row in df.iterrows()]
     fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume', marker_color=colors), row=2, col=1)
+
+    # Add highlights for patterns
+    if regions:
+        for region in regions:
+            fig.add_vrect(
+                x0=region['start'], x1=region['end'],
+                fillcolor="blue", opacity=0.2,
+                layer="below", line_width=0,
+                annotation_text=region['label'],
+                annotation_position="top left",
+                row=1, col=1
+            )
 
     fig.update_layout(xaxis_rangeslider_visible=False, height=600, showlegend=False)
     fig.update_yaxes(title_text="Price", row=1, col=1)
@@ -227,12 +239,30 @@ def main():
                     df_daily = calculate_ema(df_daily)
                     df_weekly = calculate_ema(df_weekly)
 
+                    # Also scan for patterns in the search tab
+                    regs_daily = []
+                    regs_weekly = []
+                    patterns = []
+
+                    for p_name, p_func in [("Cup and Handle", is_cup_and_handle), ("Range Breakout", is_range_breakout)]:
+                        f_d, r_d = p_func(df_daily)
+                        if f_d:
+                            regs_daily.append(r_d)
+                            patterns.append(f"{p_name} (Daily)")
+                        f_w, r_w = p_func(df_weekly)
+                        if f_w:
+                            regs_weekly.append(r_w)
+                            patterns.append(f"{p_name} (Weekly)")
+
+                    if patterns:
+                        st.success(f"Patterns found: {', '.join(patterns)}")
+
                     col1, col2 = st.columns(2)
                     with col1:
-                        chart_daily = create_chart(df_daily, search_symbol, "Daily")
+                        chart_daily = create_chart(df_daily, search_symbol, "Daily", regions=regs_daily)
                         if chart_daily: st.plotly_chart(chart_daily, use_container_width=True)
                     with col2:
-                        chart_weekly = create_chart(df_weekly, search_symbol, "Weekly")
+                        chart_weekly = create_chart(df_weekly, search_symbol, "Weekly", regions=regs_weekly)
                         if chart_weekly: st.plotly_chart(chart_weekly, use_container_width=True)
 
                     # Also show fundamentals if possible
@@ -281,34 +311,40 @@ def main():
                         if not df_weekly.empty: df_weekly = calculate_ema(df_weekly)
 
                     patterns_found = []
+                    regions_daily = []
+                    regions_weekly = []
 
                     # Pattern detection
                     for p_name, p_func in [("Cup and Handle", is_cup_and_handle), ("Range Breakout", is_range_breakout)]:
                         if p_name in selected_patterns:
-                            found = False
+                            found_daily = False
+                            found_weekly = False
                             if timeframe_option in ["Daily", "Both"] and not df_daily.empty:
-                                if p_func(df_daily): found = True
-                            if not found and timeframe_option in ["Weekly", "Both"] and not df_weekly.empty:
-                                if p_func(df_weekly): found = True
-                            if found: patterns_found.append(p_name)
+                                found_daily, reg = p_func(df_daily)
+                                if found_daily: regions_daily.append(reg)
+                            if timeframe_option in ["Weekly", "Both"] and not df_weekly.empty:
+                                found_weekly, reg = p_func(df_weekly)
+                                if found_weekly: regions_weekly.append(reg)
+                            if found_daily or found_weekly: patterns_found.append(p_name)
 
                     if "Tight Setup" in selected_patterns:
-                        found = False
+                        found_daily = False
+                        found_weekly = False
                         sector_symbol = get_sector_index(industry)
                         if timeframe_option in ["Daily", "Both"] and not df_daily.empty:
                             if sector_symbol not in sector_cache:
                                 sector_cache[sector_symbol] = get_sector_data(sector_symbol, interval="1d")
-                            if is_tight_setup(df_daily, sector_cache[sector_symbol]):
-                                found = True
+                            found_daily, reg = is_tight_setup(df_daily, sector_cache[sector_symbol])
+                            if found_daily: regions_daily.append(reg)
 
-                        if not found and timeframe_option in ["Weekly", "Both"] and not df_weekly.empty:
+                        if timeframe_option in ["Weekly", "Both"] and not df_weekly.empty:
                             sector_key_wk = sector_symbol + "_wk"
                             if sector_key_wk not in sector_cache:
                                 sector_cache[sector_key_wk] = get_sector_data(sector_symbol, interval="1wk")
-                            if is_tight_setup(df_weekly, sector_cache[sector_key_wk]):
-                                found = True
+                            found_weekly, reg = is_tight_setup(df_weekly, sector_cache[sector_key_wk])
+                            if found_weekly: regions_weekly.append(reg)
 
-                        if found:
+                        if found_daily or found_weekly:
                             patterns_found.append("Tight Setup")
 
                     if patterns_found:
@@ -320,7 +356,9 @@ def main():
                             'ROE': row['ROE (%)'],
                             'ROCE': row['ROCE (%)'],
                             'df_daily': df_daily,
-                            'df_weekly': df_weekly
+                            'df_weekly': df_weekly,
+                            'regions_daily': regions_daily,
+                            'regions_weekly': regions_weekly
                         })
 
                     time.sleep(0.05)
@@ -343,13 +381,13 @@ def main():
                                 col1, col2 = st.columns(2)
                                 with col1:
                                     if not res['df_daily'].empty:
-                                        chart_daily = create_chart(res['df_daily'], res['Symbol'], "Daily")
+                                        chart_daily = create_chart(res['df_daily'], res['Symbol'], "Daily", regions=res['regions_daily'])
                                         if chart_daily: st.plotly_chart(chart_daily, use_container_width=True)
                                     else:
                                         st.write("Daily chart not available (filtered out)")
                                 with col2:
                                     if not res['df_weekly'].empty:
-                                        chart_weekly = create_chart(res['df_weekly'], res['Symbol'], "Weekly")
+                                        chart_weekly = create_chart(res['df_weekly'], res['Symbol'], "Weekly", regions=res['regions_weekly'])
                                         if chart_weekly: st.plotly_chart(chart_weekly, use_container_width=True)
                                     else:
                                         st.write("Weekly chart not available (filtered out)")

@@ -19,56 +19,56 @@ def calculate_ema(df):
 def is_cup_and_handle(df):
     """
     Identifies Cup and Handle pattern.
-    - Cup: 1 month+ duration.
-    - Handle: Retracement not exceeding 50% of cup depth.
-    Simplified logic: Look for a significant high, a dip (cup), a return to near high, and a smaller dip (handle).
+    Returns: (bool, dict region_info)
     """
-    if len(df) < 60: # Need enough data for 1 month cup + handle
-        return False
+    if len(df) < 60:
+        return False, {}
 
-    # Using last 60-120 days for analysis
     close_prices = df['Close']
     if isinstance(close_prices, pd.DataFrame):
         close_prices = close_prices.iloc[:, 0]
 
-    prices = close_prices.tail(120).values
+    n_total = len(close_prices)
+    lookback = 120
+    prices = close_prices.tail(lookback).values
     n = len(prices)
 
-    # 1. Find the left high of the cup (peak in the first half of the period)
+    # Indices in the 'prices' array
     left_period = prices[:n//2]
     left_high_idx = np.argmax(left_period)
-    left_high = left_period[left_high_idx]
 
-    # 2. Find the bottom of the cup (minimum after the left high)
     cup_period = prices[left_high_idx:int(n*0.8)]
-    if len(cup_period) < 20: return False # At least 1 month approx
+    if len(cup_period) < 20: return False, {}
 
     cup_bottom_idx = np.argmin(cup_period) + left_high_idx
-    cup_bottom = prices[cup_bottom_idx]
 
-    # 3. Find the right lip of the cup (a peak after the bottom, near the left high)
     right_lip_period = prices[cup_bottom_idx:int(n*0.9)]
-    if len(right_lip_period) < 5: return False
+    if len(right_lip_period) < 5: return False, {}
     right_lip_idx = np.argmax(right_lip_period) + cup_bottom_idx
-    right_lip = prices[right_lip_idx]
 
-    # Check if right lip is near left high (within 10%)
-    if abs(right_lip - left_high) / left_high > 0.10:
-        return False
+    if abs(prices[right_lip_idx] - prices[left_high_idx]) / prices[left_high_idx] > 0.10:
+        return False, {}
 
-    # 4. Handle check: Small retracement after right lip
     handle_period = prices[right_lip_idx:]
-    if len(handle_period) < 3: return False
+    if len(handle_period) < 3: return False, {}
 
     handle_bottom = np.min(handle_period)
-    cup_depth = left_high - cup_bottom
-    handle_depth = right_lip - handle_bottom
+    cup_depth = prices[left_high_idx] - prices[cup_bottom_idx]
+    handle_depth = prices[right_lip_idx] - handle_bottom
 
-    # Handle depth should not exceed 50% of cup depth
     if handle_depth > 0.5 * cup_depth or handle_depth < 0:
-        return False
+        return False, {}
 
-    return True
+    # Convert local prices array indices back to df index
+    start_idx = n_total - n + left_high_idx
+    end_idx = n_total - 1
+
+    region = {
+        'start': df.index[start_idx],
+        'end': df.index[end_idx],
+        'label': 'Cup and Handle'
+    }
+    return True, region
 
 def is_range_breakout(df):
     """
@@ -88,18 +88,19 @@ def is_range_breakout(df):
 
     # Look back for potential peaks between 21 and 60 sessions ago
     recent_lookback = 3
-    for lookback in range(21, min(61, len(df))):
-        peak_idx = -lookback
-        peak_price = close_prices.iloc[peak_idx]
+    n_total = len(df)
+    for lookback in range(21, min(61, n_total)):
+        peak_idx_abs = n_total - lookback
+        peak_price = close_prices.iloc[peak_idx_abs]
 
         # 1. Check if this peak was a local high (higher than immediate neighbors)
-        if peak_price < close_prices.iloc[peak_idx-1] or peak_price < close_prices.iloc[peak_idx+1]:
+        if peak_price < close_prices.iloc[peak_idx_abs-1] or peak_price < close_prices.iloc[peak_idx_abs+1]:
             continue
 
         # 2. Check if this high was NOT broken for at least 20 sessions AFTER it was formed,
         # but BEFORE the recent breakout sessions.
-        period_after_peak = close_prices.iloc[peak_idx+1 : -recent_lookback]
-        if len(period_after_peak) < 15: continue # Allow slightly shorter ranges
+        period_after_peak = close_prices.iloc[peak_idx_abs+1 : -recent_lookback]
+        if len(period_after_peak) < 15: continue
 
         if (period_after_peak.max() > peak_price).any():
             continue
@@ -113,18 +114,22 @@ def is_range_breakout(df):
         # 4. Breakout check: any price in last 'recent_lookback' sessions breaks the peak price
         recent_prices = close_prices.tail(recent_lookback)
         if (recent_prices > peak_price).any():
-            return True
+            region = {
+                'start': df.index[peak_idx_abs],
+                'end': df.index[-1],
+                'label': 'Range Breakout'
+            }
+            return True, region
 
-    return False
+    return False, {}
 
 def is_tight_setup(stock_df, sector_df):
     """
     Tight Setup: Stock holding up within 3% of recent high (5 periods)
     while sectoral index drops > 2% over last 5 periods.
-    Works for both daily and weekly timeframes.
     """
     if len(stock_df) < 5 or len(sector_df) < 5:
-        return False
+        return False, {}
 
     # Sector drop check
     sector_close = sector_df['Close']
@@ -139,10 +144,10 @@ def is_tight_setup(stock_df, sector_df):
     # Using np.any() or similar to handle potential series, but it should be a scalar here
     if hasattr(sector_drop, 'any'):
         if not (sector_drop < -0.02).any():
-            return False
+            return False, {}
     else:
         if sector_drop >= -0.02:
-            return False
+            return False, {}
 
     # Stock holding up check
     stock_close = stock_df['Close']
@@ -156,6 +161,16 @@ def is_tight_setup(stock_df, sector_df):
     diff_pct = (stock_recent_high - stock_current) / stock_recent_high
 
     if hasattr(diff_pct, 'any'):
-        return (diff_pct < 0.035).any()
+        found = (diff_pct < 0.035).any()
     else:
-        return diff_pct < 0.035
+        found = diff_pct < 0.035
+
+    if found:
+        region = {
+            'start': stock_df.index[-5],
+            'end': stock_df.index[-1],
+            'label': 'Tight Setup'
+        }
+        return True, region
+
+    return False, {}
