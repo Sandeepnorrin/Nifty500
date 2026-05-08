@@ -60,6 +60,17 @@ def create_chart(df, symbol, timeframe="Daily", regions=None):
                 row=1, col=1
             )
 
+            # Add horizontal line for breakout price
+            b_price = region.get('breakout_price')
+            if b_price:
+                fig.add_shape(
+                    type="line",
+                    x0=region['start'], x1=df.index[-1],
+                    y0=b_price, y1=b_price,
+                    line=dict(color=color, width=2, dash="dash"),
+                    row=1, col=1
+                )
+
     fig.update_layout(xaxis_rangeslider_visible=False, height=600, showlegend=False)
     fig.update_yaxes(title_text="Price", row=1, col=1)
     fig.update_yaxes(title_text="Volume", row=2, col=1)
@@ -194,6 +205,7 @@ def main():
         with col4:
             timeframe_option = st.radio("Pattern Timeframe", ["Daily", "Weekly", "Both"], index=0, horizontal=True)
             breakout_mode = st.radio("Breakout Status", ["On the Verge", "Already Broken", "Both"], index=0, horizontal=True)
+            dist_filter = st.slider("Max % from Breakout Price", 0, 100, 5)
 
         col_btn1, col_btn2, col_btn3, _ = st.columns([1, 1, 1, 5])
         if col_btn1.button("Resume Fetch"):
@@ -399,8 +411,26 @@ def main():
 
                         # Re-calculate patterns found after filtering regions
                         current_patterns = set()
+
+                        valid_regions_daily = []
+                        valid_regions_weekly = []
+
                         for r in regions_daily + regions_weekly:
+                            # Apply distance filter for broken stocks
+                            if r.get('status') == 'Broken':
+                                b_price = r.get('breakout_price')
+                                current_p = df_daily['Close'].iloc[-1] if not df_daily.empty else 0
+                                if b_price and b_price > 0:
+                                    pct_dist = (current_p - b_price) / b_price * 100
+                                    if pct_dist > dist_filter:
+                                        continue
+
                             current_patterns.add(r['label'].replace(' (Verge)', '').replace(' & Handle', ' and Handle'))
+                            if r in regions_daily: valid_regions_daily.append(r)
+                            if r in regions_weekly: valid_regions_weekly.append(r)
+
+                        regions_daily = valid_regions_daily
+                        regions_weekly = valid_regions_weekly
 
                         if "Tight Setup" in patterns_found:
                             current_patterns.add("Tight Setup")

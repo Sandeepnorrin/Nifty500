@@ -81,7 +81,8 @@ def is_cup_and_handle(df):
         'start': df.index[start_idx],
         'end': df.index[end_idx],
         'label': label,
-        'status': status
+        'status': status,
+        'breakout_price': float(left_high)
     }
     return True, region
 
@@ -134,7 +135,8 @@ def is_range_breakout(df):
                 'start': df.index[peak_idx_abs],
                 'end': df.index[-1],
                 'label': 'Range Breakout',
-                'status': 'Broken'
+                'status': 'Broken',
+                'breakout_price': float(peak_price)
             }
             return True, region
 
@@ -145,7 +147,8 @@ def is_range_breakout(df):
                 'start': df.index[peak_idx_abs],
                 'end': df.index[-1],
                 'label': 'Breakout (Verge)',
-                'status': 'Verge'
+                'status': 'Verge',
+                'breakout_price': float(peak_price)
             }
             return True, region
 
