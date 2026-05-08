@@ -92,7 +92,7 @@ def is_range_breakout(df):
     - Price dips by max 25% from that high during this period.
     - Eventually current price breaks that high.
     """
-    if len(df) < 25: return False
+    if len(df) < 25: return False, {}
 
     close_prices = df['Close']
     if isinstance(close_prices, pd.DataFrame):
