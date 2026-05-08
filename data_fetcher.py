@@ -82,8 +82,8 @@ def get_stock_fundamentals(symbol):
                             except ValueError:
                                 dii_holdings.append(0.0)
 
-                fundamentals['FII_Holdings'] = fii_holdings[-3:] if len(fii_holdings) >= 3 else fii_holdings
-                fundamentals['DII_Holdings'] = dii_holdings[-3:] if len(dii_holdings) >= 3 else dii_holdings
+                fundamentals['FII_Holdings'] = fii_holdings[-4:] if len(fii_holdings) >= 4 else fii_holdings
+                fundamentals['DII_Holdings'] = dii_holdings[-4:] if len(dii_holdings) >= 4 else dii_holdings
 
         return fundamentals
     except Exception as e:

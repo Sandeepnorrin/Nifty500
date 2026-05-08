@@ -26,10 +26,63 @@ def create_chart(df, symbol, timeframe="Daily"):
     fig.update_layout(title=f"{symbol} - {timeframe}", xaxis_rangeslider_visible=False, height=400)
     return fig
 
+@st.cache_data(ttl=86400) # Cache for 24 hours
+def fetch_all_fundamentals():
+    nifty500 = get_nifty500_stocks()
+    all_data = []
+
+    progress_text = "Fetching all fundamentals... This might take some time."
+    my_bar = st.progress(0, text=progress_text)
+
+    total = len(nifty500)
+    for i, (idx, row) in enumerate(nifty500.iterrows()):
+        symbol = row['Symbol']
+        my_bar.progress((i + 1) / total, text=f"Fetching {symbol} ({i+1}/{total})")
+
+        funds = get_stock_fundamentals(symbol)
+        if funds:
+            fii = funds.get('FII_Holdings', [])
+            dii = funds.get('DII_Holdings', [])
+
+            # Fill with 0 if fewer than 4 quarters
+            fii = ([0.0] * (4 - len(fii))) + fii
+            dii = ([0.0] * (4 - len(dii))) + dii
+
+            all_data.append({
+                'Symbol': symbol,
+                'Industry': row['Industry'],
+                'ROE (%)': funds.get('ROE'),
+                'ROCE (%)': funds.get('ROCE'),
+                'FII Q-3': fii[0],
+                'FII Q-2': fii[1],
+                'FII Q-1': fii[2],
+                'FII Curr': fii[3],
+                'DII Q-3': dii[0],
+                'DII Q-2': dii[1],
+                'DII Q-1': dii[2],
+                'DII Curr': dii[3]
+            })
+        time.sleep(0.05)
+
+    my_bar.empty()
+    return pd.DataFrame(all_data)
+
 def main():
     st.set_page_config(page_title="Nifty 500 Stock Analyzer", layout="wide")
     st.title("📈 Nifty 500 Stock Analyzer")
     st.write("Analyze Nifty 500 stocks based on fundamental and technical criteria.")
+
+    # Show fundamental table by default
+    st.subheader("Nifty 500 Fundamental Overview")
+    if st.button("Refresh Fundamental Data"):
+        st.cache_data.clear()
+        st.rerun()
+
+    fundamentals_df = fetch_all_fundamentals()
+    if not fundamentals_df.empty:
+        st.dataframe(fundamentals_df, use_container_width=True, hide_index=True)
+    else:
+        st.error("Failed to fetch fundamental data.")
 
     # Sidebar for filters
     st.sidebar.header("Filters")
