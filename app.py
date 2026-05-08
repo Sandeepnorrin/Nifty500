@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from data_fetcher import get_nifty500_stocks, get_stock_fundamentals, get_price_data, get_sector_data
 from fundamental_analysis import filter_fundamentals, get_holding_category
 from technical_analysis import calculate_ema, is_cup_and_handle, is_range_breakout, is_tight_setup
@@ -11,19 +12,32 @@ def create_chart(df, symbol, timeframe="Daily"):
     if df.empty:
         return None
 
-    fig = go.Figure(data=[go.Candlestick(x=df.index,
+    # Create subplots: row 1 for Candlestick, row 2 for Volume
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                        vertical_spacing=0.03, subplot_titles=(f'{symbol} - {timeframe}', 'Volume'),
+                        row_width=[0.2, 0.7])
+
+    # Candlestick chart
+    fig.add_trace(go.Candlestick(x=df.index,
                 open=df['Open'],
                 high=df['High'],
                 low=df['Low'],
                 close=df['Close'],
-                name='Price')])
+                name='Price'), row=1, col=1)
 
     # Add EMAs
     for ema_name in ['EMA10', 'EMA20', 'EMA50', 'EMA200']:
         if ema_name in df.columns:
-            fig.add_trace(go.Scatter(x=df.index, y=df[ema_name], name=ema_name, line=dict(width=1)))
+            fig.add_trace(go.Scatter(x=df.index, y=df[ema_name], name=ema_name, line=dict(width=1)), row=1, col=1)
 
-    fig.update_layout(title=f"{symbol} - {timeframe}", xaxis_rangeslider_visible=False, height=400)
+    # Volume chart
+    colors = ['red' if row['Open'] > row['Close'] else 'green' for index, row in df.iterrows()]
+    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume', marker_color=colors), row=2, col=1)
+
+    fig.update_layout(xaxis_rangeslider_visible=False, height=600, showlegend=False)
+    fig.update_yaxes(title_text="Price", row=1, col=1)
+    fig.update_yaxes(title_text="Volume", row=2, col=1)
+
     return fig
 
 FUNDAMENTALS_FILE = "nifty500_fundamentals.csv"
@@ -36,8 +50,21 @@ def fetch_and_save_fundamentals():
     my_bar = st.progress(0, text=progress_text)
 
     total = len(nifty500)
+
+    # Try to load existing data to resume if possible
+    try:
+        existing_df = pd.read_csv(FUNDAMENTALS_FILE)
+        processed_symbols = set(existing_df['Symbol'].tolist())
+        all_data = existing_df.to_dict('records')
+    except:
+        processed_symbols = set()
+        all_data = []
+
     for i, (idx, row) in enumerate(nifty500.iterrows()):
         symbol = row['Symbol']
+        if symbol in processed_symbols:
+            continue
+
         my_bar.progress((i + 1) / total, text=f"Fetching {symbol} ({i+1}/{total})")
 
         funds = get_stock_fundamentals(symbol)
@@ -66,6 +93,11 @@ def fetch_and_save_fundamentals():
                 'DII Curr': dii[3],
                 'Category': category
             })
+
+        # Periodic save to avoid losing all progress on error
+        if len(all_data) % 20 == 0:
+            pd.DataFrame(all_data).to_csv(FUNDAMENTALS_FILE, index=False)
+
         time.sleep(0.05)
 
     my_bar.empty()
@@ -111,7 +143,14 @@ def main():
     selected_patterns = st.sidebar.multiselect("Select Patterns", pattern_options, default=pattern_options)
     timeframe_option = st.sidebar.radio("Pattern Timeframe", ["Daily", "Weekly", "Both"], index=0)
 
-    if st.sidebar.button("Refresh Fundamental Data"):
+    col_ref1, col_ref2 = st.sidebar.columns(2)
+    if col_ref1.button("Resume Fetch"):
+        fetch_and_save_fundamentals()
+        st.rerun()
+    if col_ref2.button("Full Refresh"):
+        import os
+        if os.path.exists(FUNDAMENTALS_FILE):
+            os.remove(FUNDAMENTALS_FILE)
         fetch_and_save_fundamentals()
         st.rerun()
 
@@ -132,8 +171,39 @@ def main():
 
     with tab1:
         st.subheader("Nifty 500 Fundamental Overview")
-        st.write(f"Showing {len(filtered_df)} stocks matching filters.")
-        st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+
+        view_mode = st.radio("View Mode", ["Table", "Charts"], horizontal=True)
+
+        if view_mode == "Table":
+            st.write(f"Showing {len(filtered_df)} stocks matching filters.")
+            st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+        else:
+            chart_timeframe = st.selectbox("Chart Timeframe", ["Daily", "Weekly"], key="tab1_timeframe")
+            st.write(f"Displaying charts for {len(filtered_df)} stocks.")
+
+            # Limit display to avoid crashing browser if many stocks are filtered
+            max_charts = 20
+            stocks_to_show = filtered_df.head(max_charts)
+            if len(filtered_df) > max_charts:
+                st.warning(f"Showing first {max_charts} stocks. Refine filters to see others.")
+
+            for _, row in stocks_to_show.iterrows():
+                symbol = row['Symbol']
+                with st.container():
+                    st.markdown(f"### {symbol} ({row['Industry']})")
+                    st.write(f"ROE: {row['ROE (%)']}%, ROCE: {row['ROCE (%)']}%, Category: {row['Category']}")
+
+                    interval = "1d" if chart_timeframe == "Daily" else "1wk"
+                    period = "1y" if chart_timeframe == "Daily" else "2y"
+
+                    df_price = get_price_data(symbol, period=period, interval=interval)
+                    if not df_price.empty:
+                        df_price = calculate_ema(df_price)
+                        fig = create_chart(df_price, symbol, chart_timeframe)
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.error(f"Failed to fetch data for {symbol}")
+                    st.divider()
 
     with tab3:
         search_symbol = st.text_input("Search Stock (e.g., RELIANCE, TCS)", "").upper().strip()

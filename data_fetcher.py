@@ -23,82 +23,82 @@ def get_stock_fundamentals(symbol):
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
 
-    try:
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code != 200:
-            return None
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url, headers=headers, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.content, 'html.parser')
+                fundamentals = {}
 
-        soup = BeautifulSoup(response.content, 'html.parser')
+                # Extract ROE and ROCE
+                ratios_li = soup.find_all('li', class_='flex flex-space-between')
+                for li in ratios_li:
+                    name_span = li.find('span', class_='name')
+                    if not name_span: continue
+                    name = name_span.text.strip()
 
-        fundamentals = {}
+                    value_span = li.find('span', class_='value')
+                    if value_span:
+                        number_span = value_span.find('span', class_='number')
+                        if number_span:
+                            value = number_span.text.strip()
+                        else:
+                            value = value_span.text.strip().split('\n')[0].replace(',', '').replace('%', '').strip()
 
-        # Extract ROE and ROCE
-        # They are usually in the top "company-info" or "top-ratios" section
-        ratios_li = soup.find_all('li', class_='flex flex-space-between')
-        for li in ratios_li:
-            name_span = li.find('span', class_='name')
-            if not name_span: continue
-            name = name_span.text.strip()
-            value_span = li.find('span', class_='value')
-            if value_span:
-                # Value might contain extra whitespace and %
-                value = value_span.text.strip().split('\n')[0].replace(',', '').replace('%', '').strip()
-                try:
-                    if 'Return on equity' in name:
-                        fundamentals['ROE'] = float(value)
-                    elif 'ROCE' in name:
-                        fundamentals['ROCE'] = float(value)
-                except ValueError:
-                    pass
+                        try:
+                            if name == 'ROE' or 'Return on equity' in name:
+                                fundamentals['ROE'] = float(value)
+                            elif name == 'ROCE':
+                                fundamentals['ROCE'] = float(value)
+                        except ValueError:
+                            pass
 
-        # Extract Shareholding Pattern (FII/DII)
-        # We need past 3 quarters to see 2 QoQ increases
-        shareholding_section = soup.find('section', id='shareholding')
-        if shareholding_section:
-            # Look for quarterly table
-            table = shareholding_section.find('table', class_='data-table')
-            if table:
-                rows = table.find_all('tr')
+                # Extract Shareholding Pattern (FII/DII)
+                shareholding_section = soup.find('section', id='shareholding')
+                if shareholding_section:
+                    table = shareholding_section.find('table', class_='data-table')
+                    if table:
+                        rows = table.find_all('tr')
+                        fii_holdings = []
+                        dii_holdings = []
+                        for row in rows:
+                            cells = row.find_all('td')
+                            if not cells: continue
+                            row_name = cells[0].text.strip()
+                            if 'FIIs' in row_name:
+                                for c in cells[1:]:
+                                    val = c.text.strip().replace('%', '').strip()
+                                    try: fii_holdings.append(float(val or 0))
+                                    except ValueError: fii_holdings.append(0.0)
+                            elif 'DIIs' in row_name:
+                                for c in cells[1:]:
+                                    val = c.text.strip().replace('%', '').strip()
+                                    try: dii_holdings.append(float(val or 0))
+                                    except ValueError: dii_holdings.append(0.0)
+                        fundamentals['FII_Holdings'] = fii_holdings[-4:] if len(fii_holdings) >= 4 else fii_holdings
+                        fundamentals['DII_Holdings'] = dii_holdings[-4:] if len(dii_holdings) >= 4 else dii_holdings
 
-                fii_holdings = []
-                dii_holdings = []
+                return fundamentals
 
-                for row in rows:
-                    cells = row.find_all('td')
-                    if not cells: continue
-                    row_name = cells[0].text.strip()
-                    if 'FIIs' in row_name:
-                        for c in cells[1:]:
-                            val = c.text.strip().replace('%', '').strip()
-                            try:
-                                fii_holdings.append(float(val or 0))
-                            except ValueError:
-                                fii_holdings.append(0.0)
-                    elif 'DIIs' in row_name:
-                        for c in cells[1:]:
-                            val = c.text.strip().replace('%', '').strip()
-                            try:
-                                dii_holdings.append(float(val or 0))
-                            except ValueError:
-                                dii_holdings.append(0.0)
-
-                fundamentals['FII_Holdings'] = fii_holdings[-4:] if len(fii_holdings) >= 4 else fii_holdings
-                fundamentals['DII_Holdings'] = dii_holdings[-4:] if len(dii_holdings) >= 4 else dii_holdings
-
-        return fundamentals
-    except Exception as e:
-        print(f"Error scraping fundamentals for {symbol}: {e}")
-        return None
+            if response.status_code == 429:
+                time.sleep(5 * (attempt + 1))
+            else:
+                break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(2 * (attempt + 1))
+            else:
+                print(f"Error scraping fundamentals for {symbol} after {max_retries} attempts: {e}")
+    return None
 
 def get_price_data(symbol, period="1y", interval="1d"):
     """
     Fetches historical price data from Yahoo Finance.
     """
-    # yfinance uses .NS for Indian stocks
     ticker = symbol + ".NS"
     try:
         data = yf.download(ticker, period=period, interval=interval, progress=False)
-        # Handle MultiIndex columns in newer yfinance versions
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
         return data
@@ -112,7 +112,6 @@ def get_sector_data(sector_index_symbol, period="2y", interval="1d"):
     """
     try:
         data = yf.download(sector_index_symbol + ".NS", period=period, interval=interval, progress=False)
-        # Handle MultiIndex columns in newer yfinance versions
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
         return data
