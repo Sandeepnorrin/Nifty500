@@ -4,13 +4,23 @@ import yfinance as yf
 from bs4 import BeautifulSoup
 import time
 
-def get_nifty500_stocks():
+import os
+
+NIFTY500_LIST_FILE = "nifty500_list.csv"
+
+def get_nifty500_stocks(refresh=False):
+    if not refresh and os.path.exists(NIFTY500_LIST_FILE):
+        return pd.read_csv(NIFTY500_LIST_FILE)
+
     url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
     try:
         df = pd.read_csv(url)
+        df.to_csv(NIFTY500_LIST_FILE, index=False)
         return df
     except Exception as e:
         print(f"Error fetching Nifty 500 list: {e}")
+        if os.path.exists(NIFTY500_LIST_FILE):
+            return pd.read_csv(NIFTY500_LIST_FILE)
         return pd.DataFrame()
 
 def get_stock_fundamentals(symbol):
@@ -19,14 +29,19 @@ def get_stock_fundamentals(symbol):
     Note: Screener.in uses symbols without .NS suffix.
     """
     url = f"https://www.screener.in/company/{symbol}/"
+    session = requests.Session()
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
     }
 
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            response = requests.get(url, headers=headers, timeout=15)
+            response = session.get(url, headers=headers, timeout=15)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.content, 'html.parser')
                 fundamentals = {}
@@ -111,7 +126,10 @@ def get_sector_data(sector_index_symbol, period="2y", interval="1d"):
     Fetches historical price data for sectoral indices.
     """
     try:
-        data = yf.download(sector_index_symbol + ".NS", period=period, interval=interval, progress=False)
+        symbol = sector_index_symbol
+        if not symbol.startswith('^'):
+            symbol += ".NS"
+        data = yf.download(symbol, period=period, interval=interval, progress=False)
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
         return data

@@ -154,6 +154,10 @@ def main():
         fetch_and_save_fundamentals()
         st.rerun()
 
+    if st.sidebar.button("Refresh Nifty 500 List"):
+        get_nifty500_stocks(refresh=True)
+        st.success("Nifty 500 list updated!")
+
     # Apply filters to the table
     filtered_df = fundamentals_df[
         (fundamentals_df['ROE (%)'] >= roe_filter) &
@@ -165,12 +169,16 @@ def main():
 
     if selected_cat != "Any":
         filtered_df = filtered_df[filtered_df['Category'] == selected_cat]
+    else:
+        # If "Any" is selected, we still only want those that have at least one increase
+        filtered_df = filtered_df[filtered_df['Category'] != "None"]
 
     # Tabs for different views
     tab1, tab2, tab3 = st.tabs(["📊 Data Table", "🔍 Technical Scanner", "📈 Stock Research"])
 
     with tab1:
         st.subheader("Nifty 500 Fundamental Overview")
+        st.info("Showing stocks where FII or DII holdings increased in back-to-back 2 quarters.")
 
         view_mode = st.radio("View Mode", ["Table", "Charts"], horizontal=True)
 
@@ -318,7 +326,8 @@ def main():
                 status.update(label="Analysis complete!", state="complete", expanded=False)
 
             if not results:
-                st.warning("No stocks found matching the criteria.")
+                st.warning("No stocks found matching both Fundamental and Technical criteria.")
+                st.info("Try relaxing filters: lower ROE/ROCE, select 'Any' Category, or select all Patterns.")
             else:
                 st.subheader(f"Found {len(results)} matching stocks")
 

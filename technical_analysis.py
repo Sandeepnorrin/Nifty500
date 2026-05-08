@@ -87,6 +87,7 @@ def is_range_breakout(df):
     # and check the criteria against the current price breakout.
 
     # Look back for potential peaks between 21 and 60 sessions ago
+    recent_lookback = 3
     for lookback in range(21, min(61, len(df))):
         peak_idx = -lookback
         peak_price = close_prices.iloc[peak_idx]
@@ -95,9 +96,10 @@ def is_range_breakout(df):
         if peak_price < close_prices.iloc[peak_idx-1] or peak_price < close_prices.iloc[peak_idx+1]:
             continue
 
-        # 2. Check if this high was NOT broken for at least 20 sessions after it was formed
-        period_after_peak = close_prices.iloc[peak_idx+1:-1]
-        if len(period_after_peak) < 20: continue
+        # 2. Check if this high was NOT broken for at least 20 sessions AFTER it was formed,
+        # but BEFORE the recent breakout sessions.
+        period_after_peak = close_prices.iloc[peak_idx+1 : -recent_lookback]
+        if len(period_after_peak) < 15: continue # Allow slightly shorter ranges
 
         if (period_after_peak.max() > peak_price).any():
             continue
@@ -108,9 +110,9 @@ def is_range_breakout(df):
         if dip_pct > 0.25:
             continue
 
-        # 4. Breakout check: current price breaks the peak price
-        current_price = close_prices.iloc[-1]
-        if current_price > peak_price:
+        # 4. Breakout check: any price in last 'recent_lookback' sessions breaks the peak price
+        recent_prices = close_prices.tail(recent_lookback)
+        if (recent_prices > peak_price).any():
             return True
 
     return False
@@ -150,10 +152,10 @@ def is_tight_setup(stock_df, sector_df):
     stock_recent_high = stock_close.iloc[-5:].max()
     stock_current = stock_close.iloc[-1]
 
-    # Within 3% of recent high
+    # Within 3.5% of recent high (slightly relaxed from 3%)
     diff_pct = (stock_recent_high - stock_current) / stock_recent_high
 
     if hasattr(diff_pct, 'any'):
-        return (diff_pct < 0.03).any()
+        return (diff_pct < 0.035).any()
     else:
-        return diff_pct < 0.03
+        return diff_pct < 0.035

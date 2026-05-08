@@ -20,7 +20,7 @@ def get_holding_category(fii_holdings, dii_holdings):
         return "FII"
     elif dii_increased:
         return "DII"
-    return "All"
+    return "None"
 
 def filter_fundamentals(fundamentals, roe_min, roce_min):
     """
@@ -42,7 +42,7 @@ def filter_fundamentals(fundamentals, roe_min, roce_min):
         fundamentals.get('DII_Holdings', [])
     )
 
-    if category != "All":
+    if category != "None":
         return True, category.lower()
 
     return False, None
