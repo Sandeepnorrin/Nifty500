@@ -62,10 +62,12 @@ def fetch_and_save_fundamentals():
 
     for i, (idx, row) in enumerate(nifty500.iterrows()):
         symbol = row['Symbol']
+
+        # Calculate progress correctly based on the iteration index 'i'
+        my_bar.progress((i + 1) / total, text=f"Fetching {symbol} ({i+1}/{total})")
+
         if symbol in processed_symbols:
             continue
-
-        my_bar.progress((i + 1) / total, text=f"Fetching {symbol} ({i+1}/{total})")
 
         funds = get_stock_fundamentals(symbol)
         if funds:
@@ -260,11 +262,11 @@ def main():
                 total_stocks = len(filtered_df)
                 sector_cache = {}
 
-                for i, row in filtered_df.iterrows():
+                for idx, (df_idx, row) in enumerate(filtered_df.iterrows()):
                     symbol = row['Symbol']
                     industry = row['Industry']
 
-                    progress_bar.progress((i + 1) / total_stocks, text=f"Analyzing {symbol} ({i+1}/{total_stocks})")
+                    progress_bar.progress((idx + 1) / total_stocks, text=f"Analyzing {symbol} ({idx+1}/{total_stocks})")
 
                     # Technical Analysis
                     df_daily = pd.DataFrame()
