@@ -25,6 +25,16 @@ def create_chart(df, symbol, timeframe="Daily", regions=None):
                 close=df['Close'],
                 name='Price'), row=1, col=1)
 
+    # Focus on current period (last 1 year for daily, last 2 years for weekly)
+    if not df.empty:
+        last_date = df.index[-1]
+        if timeframe == "Daily":
+            start_date = last_date - pd.DateOffset(years=1)
+        else:
+            start_date = last_date - pd.DateOffset(years=2)
+        fig.update_xaxes(range=[start_date, last_date], row=1, col=1)
+        fig.update_xaxes(range=[start_date, last_date], row=2, col=1)
+
     # Add EMAs
     for ema_name in ['EMA10', 'EMA20', 'EMA50', 'EMA200']:
         if ema_name in df.columns:
@@ -96,6 +106,20 @@ def fetch_and_save_fundamentals():
 
             category = get_holding_category(fii, dii)
 
+            # Also get 52-week high info
+            df_3y = get_price_data(symbol, period="3y")
+            high_52w = 0.0
+            curr_price = 0.0
+            pct_from_high = 100.0
+
+            if not df_3y.empty:
+                # 52 weeks is approx 252 trading days
+                df_1y = df_3y.tail(252)
+                high_52w = df_1y['High'].max()
+                curr_price = df_1y['Close'].iloc[-1]
+                if high_52w > 0:
+                    pct_from_high = abs(high_52w - curr_price) / high_52w * 100
+
             all_data.append({
                 'Symbol': symbol,
                 'Industry': row['Industry'],
@@ -109,7 +133,10 @@ def fetch_and_save_fundamentals():
                 'DII Q-2': dii[1],
                 'DII Q-1': dii[2],
                 'DII Curr': dii[3],
-                'Category': category
+                'Category': category,
+                '52W High': round(float(high_52w), 2),
+                'Current Price': round(float(curr_price), 2),
+                '% From 52W High': round(float(pct_from_high), 2)
             })
 
         # Periodic save to avoid losing all progress on error
@@ -126,13 +153,18 @@ def fetch_and_save_fundamentals():
 def load_fundamentals():
     try:
         df = pd.read_csv(FUNDAMENTALS_FILE)
-        # Calculate Category if not present
-        if 'Category' not in df.columns:
-            df['Category'] = df.apply(lambda row: get_holding_category(
-                [row['FII Q-3'], row['FII Q-2'], row['FII Q-1'], row['FII Curr']],
-                [row['DII Q-3'], row['DII Q-2'], row['DII Q-1'], row['DII Curr']]
-            ), axis=1)
-            df.to_csv(FUNDAMENTALS_FILE, index=False)
+        # Check if new columns exist, if not, we might need a refresh
+        required_cols = ['52W High', 'Current Price', '% From 52W High']
+        if not all(col in df.columns for col in required_cols) or 'Category' not in df.columns:
+            st.warning("Fundamentals data is outdated. Please click 'Full Refresh' to update all columns.")
+
+            # Still try to calculate Category if only that is missing
+            if 'Category' not in df.columns and all(c in df.columns for c in ['FII Curr', 'DII Curr']):
+                 df['Category'] = df.apply(lambda row: get_holding_category(
+                    [row['FII Q-3'], row['FII Q-2'], row['FII Q-1'], row['FII Curr']],
+                    [row['DII Q-3'], row['DII Q-2'], row['DII Q-1'], row['DII Curr']]
+                ), axis=1)
+                 df.to_csv(FUNDAMENTALS_FILE, index=False)
         return df
     except FileNotFoundError:
         return fetch_and_save_fundamentals()
@@ -144,45 +176,47 @@ def main():
     # Load fundamentals first to populate filters
     fundamentals_df = load_fundamentals()
 
-    # Sidebar for filters
-    st.sidebar.header("Global Filters")
-    roe_filter = st.sidebar.slider("Minimum ROE (%)", 0, 100, 15)
-    roce_filter = st.sidebar.slider("Minimum ROCE (%)", 0, 100, 15)
+    # Top Filters
+    with st.expander("🛠️ Global Filters & Settings", expanded=True):
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            roe_filter = st.slider("Minimum ROE (%)", 0, 100, 15)
+            roce_filter = st.slider("Minimum ROCE (%)", 0, 100, 15)
+        with col2:
+            industries = sorted(fundamentals_df['Industry'].unique().tolist())
+            selected_industries = st.multiselect("Industries", industries, default=[])
+            cat_options = ["Any", "FII", "DII", "Both"]
+            selected_cat = st.selectbox("FII/DII Increase Category", cat_options)
+        with col3:
+            high_filter = st.slider("Max % Away from 52W High", 0, 100, 20)
+            pattern_options = ["Cup and Handle", "Range Breakout", "Tight Setup"]
+            selected_patterns = st.multiselect("Select Patterns", pattern_options, default=pattern_options)
+        with col4:
+            timeframe_option = st.radio("Pattern Timeframe", ["Daily", "Weekly", "Both"], index=0, horizontal=True)
+            breakout_mode = st.radio("Breakout Status", ["On the Verge", "Already Broken", "Both"], index=0, horizontal=True)
 
-    industries = sorted(fundamentals_df['Industry'].unique().tolist())
-    selected_industries = st.sidebar.multiselect("Industries", industries, default=[])
-
-    cat_options = ["Any", "FII", "DII", "Both"]
-    selected_cat = st.sidebar.selectbox("FII/DII Increase Category", cat_options)
-
-    st.sidebar.markdown("---")
-    st.sidebar.header("Technical Analysis Settings")
-    pattern_options = ["Cup and Handle", "Range Breakout", "Tight Setup"]
-    selected_patterns = st.sidebar.multiselect("Select Patterns", pattern_options, default=pattern_options)
-    timeframe_option = st.sidebar.radio("Pattern Timeframe", ["Daily", "Weekly", "Both"], index=0)
-
-    breakout_mode = st.sidebar.radio("Breakout Status", ["On the Verge", "Already Broken", "Both"], index=0)
-
-    col_ref1, col_ref2 = st.sidebar.columns(2)
-    if col_ref1.button("Resume Fetch"):
-        fetch_and_save_fundamentals()
-        st.rerun()
-    if col_ref2.button("Full Refresh"):
-        import os
-        if os.path.exists(FUNDAMENTALS_FILE):
-            os.remove(FUNDAMENTALS_FILE)
-        fetch_and_save_fundamentals()
-        st.rerun()
-
-    if st.sidebar.button("Refresh Nifty 500 List"):
-        get_nifty500_stocks(refresh=True)
-        st.success("Nifty 500 list updated!")
+        col_btn1, col_btn2, col_btn3, _ = st.columns([1, 1, 1, 5])
+        if col_btn1.button("Resume Fetch"):
+            fetch_and_save_fundamentals()
+            st.rerun()
+        if col_btn2.button("Full Refresh"):
+            import os
+            if os.path.exists(FUNDAMENTALS_FILE):
+                os.remove(FUNDAMENTALS_FILE)
+            fetch_and_save_fundamentals()
+            st.rerun()
+        if col_btn3.button("Update Nifty 500"):
+            get_nifty500_stocks(refresh=True)
+            st.success("List updated!")
 
     # Apply filters to the table
     filtered_df = fundamentals_df[
         (fundamentals_df['ROE (%)'] >= roe_filter) &
         (fundamentals_df['ROCE (%)'] >= roce_filter)
     ]
+
+    if '% From 52W High' in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df['% From 52W High'] <= high_filter]
 
     if selected_industries:
         filtered_df = filtered_df[filtered_df['Industry'].isin(selected_industries)]
@@ -222,7 +256,7 @@ def main():
                     st.write(f"ROE: {row['ROE (%)']}%, ROCE: {row['ROCE (%)']}%, Category: {row['Category']}")
 
                     interval = "1d" if chart_timeframe == "Daily" else "1wk"
-                    period = "1y" if chart_timeframe == "Daily" else "2y"
+                    period = "3y"
 
                     df_price = get_price_data(symbol, period=period, interval=interval)
                     if not df_price.empty:
@@ -238,8 +272,8 @@ def main():
         if search_symbol:
             st.subheader(f"Search Result: {search_symbol}")
             with st.spinner(f"Fetching data for {search_symbol}..."):
-                df_daily = get_price_data(search_symbol, period="1y", interval="1d")
-                df_weekly = get_price_data(search_symbol, period="2y", interval="1wk")
+                df_daily = get_price_data(search_symbol, period="3y", interval="1d")
+                df_weekly = get_price_data(search_symbol, period="3y", interval="1wk")
 
                 if not df_daily.empty:
                     df_daily = calculate_ema(df_daily)
@@ -309,11 +343,11 @@ def main():
                     df_weekly = pd.DataFrame()
 
                     if timeframe_option in ["Daily", "Both"]:
-                        df_daily = get_price_data(symbol, period="1y", interval="1d")
+                        df_daily = get_price_data(symbol, period="3y", interval="1d")
                         if not df_daily.empty: df_daily = calculate_ema(df_daily)
 
                     if timeframe_option in ["Weekly", "Both"]:
-                        df_weekly = get_price_data(symbol, period="2y", interval="1wk")
+                        df_weekly = get_price_data(symbol, period="3y", interval="1wk")
                         if not df_weekly.empty: df_weekly = calculate_ema(df_weekly)
 
                     patterns_found = []
