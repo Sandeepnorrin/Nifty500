@@ -26,12 +26,13 @@ def create_chart(df, symbol, timeframe="Daily"):
     fig.update_layout(title=f"{symbol} - {timeframe}", xaxis_rangeslider_visible=False, height=400)
     return fig
 
-@st.cache_data(ttl=86400) # Cache for 24 hours
-def fetch_all_fundamentals():
+FUNDAMENTALS_FILE = "nifty500_fundamentals.csv"
+
+def fetch_and_save_fundamentals():
     nifty500 = get_nifty500_stocks()
     all_data = []
 
-    progress_text = "Fetching all fundamentals... This might take some time."
+    progress_text = "Refreshing all fundamentals... This will take a few minutes."
     my_bar = st.progress(0, text=progress_text)
 
     total = len(nifty500)
@@ -51,8 +52,8 @@ def fetch_all_fundamentals():
             all_data.append({
                 'Symbol': symbol,
                 'Industry': row['Industry'],
-                'ROE (%)': funds.get('ROE'),
-                'ROCE (%)': funds.get('ROCE'),
+                'ROE (%)': funds.get('ROE') or 0.0,
+                'ROCE (%)': funds.get('ROCE') or 0.0,
                 'FII Q-3': fii[0],
                 'FII Q-2': fii[1],
                 'FII Q-1': fii[2],
@@ -65,24 +66,20 @@ def fetch_all_fundamentals():
         time.sleep(0.05)
 
     my_bar.empty()
-    return pd.DataFrame(all_data)
+    df = pd.DataFrame(all_data)
+    df.to_csv(FUNDAMENTALS_FILE, index=False)
+    return df
+
+def load_fundamentals():
+    try:
+        return pd.read_csv(FUNDAMENTALS_FILE)
+    except FileNotFoundError:
+        return fetch_and_save_fundamentals()
 
 def main():
     st.set_page_config(page_title="Nifty 500 Stock Analyzer", layout="wide")
     st.title("📈 Nifty 500 Stock Analyzer")
     st.write("Analyze Nifty 500 stocks based on fundamental and technical criteria.")
-
-    # Show fundamental table by default
-    st.subheader("Nifty 500 Fundamental Overview")
-    if st.button("Refresh Fundamental Data"):
-        st.cache_data.clear()
-        st.rerun()
-
-    fundamentals_df = fetch_all_fundamentals()
-    if not fundamentals_df.empty:
-        st.dataframe(fundamentals_df, use_container_width=True, hide_index=True)
-    else:
-        st.error("Failed to fetch fundamental data.")
 
     # Sidebar for filters
     st.sidebar.header("Filters")
@@ -91,6 +88,23 @@ def main():
 
     pattern_options = ["Cup and Handle", "Range Breakout", "Tight Setup"]
     selected_patterns = st.sidebar.multiselect("Select Technical Patterns", pattern_options, default=pattern_options)
+
+    if st.sidebar.button("Refresh Fundamental Data"):
+        fetch_and_save_fundamentals()
+        st.rerun()
+
+    # Load and filter fundamentals table
+    fundamentals_df = load_fundamentals()
+
+    # Apply filters to the table immediately
+    filtered_df = fundamentals_df[
+        (fundamentals_df['ROE (%)'] >= roe_filter) &
+        (fundamentals_df['ROCE (%)'] >= roce_filter)
+    ]
+
+    st.subheader("Nifty 500 Fundamental Overview")
+    st.write(f"Showing {len(filtered_df)} stocks matching ROE/ROCE filters.")
+    st.dataframe(filtered_df, use_container_width=True, hide_index=True)
 
     st.sidebar.markdown("---")
     search_symbol = st.sidebar.text_input("Search Stock (e.g., RELIANCE, TCS)", "").upper().strip()
@@ -125,31 +139,32 @@ def main():
                 st.error(f"Could not find data for symbol: {search_symbol}")
 
     if st.sidebar.button("Run Analysis"):
-        with st.status("Analyzing Nifty 500 stocks...", expanded=True) as status:
-            st.write("Fetching Nifty 500 list...")
-            nifty500 = get_nifty500_stocks()
-            if nifty500.empty:
-                st.error("Failed to fetch Nifty 500 list.")
+        with st.status("Analyzing filtered stocks...", expanded=True) as status:
+            if filtered_df.empty:
+                st.warning("No stocks match the ROE/ROCE criteria.")
                 return
 
             results = []
             progress_bar = st.progress(0)
 
-            # To speed up during development/testing, we might want to limit the number of stocks
-            # but for production we do all 500.
-            total_stocks = len(nifty500)
+            total_stocks = len(filtered_df)
 
             # Cache for sector data to avoid redundant downloads
             sector_cache = {}
 
-            for i, row in nifty500.iterrows():
+            for i, row in filtered_df.iterrows():
                 symbol = row['Symbol']
                 industry = row['Industry']
 
                 progress_bar.progress((i + 1) / total_stocks, text=f"Analyzing {symbol} ({i+1}/{total_stocks})")
 
-                # 1. Fundamental Analysis
-                fundamentals = get_stock_fundamentals(symbol)
+                # Use existing fundamentals from the dataframe to avoid redundant scraping
+                fundamentals = {
+                    'ROE': row['ROE (%)'],
+                    'ROCE': row['ROCE (%)'],
+                    'FII_Holdings': [row['FII Q-3'], row['FII Q-2'], row['FII Q-1'], row['FII Curr']],
+                    'DII_Holdings': [row['DII Q-3'], row['DII Q-2'], row['DII Q-1'], row['DII Curr']]
+                }
                 passed_fundamentals, category = filter_fundamentals(fundamentals, roe_filter, roce_filter)
 
                 if passed_fundamentals:
