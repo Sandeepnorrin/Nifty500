@@ -63,10 +63,25 @@ def is_cup_and_handle(df):
     start_idx = n_total - n + left_high_idx
     end_idx = n_total - 1
 
+    current_price = close_prices.iloc[-1]
+    left_high = prices[left_high_idx]
+
+    # Check if broken or on verge
+    if current_price > left_high:
+        status = 'Broken'
+        label = 'Cup and Handle'
+    elif current_price >= left_high * 0.985:
+        status = 'Verge'
+        label = 'Cup & Handle (Verge)'
+    else:
+        # If it's too far from the high, it's not "on the verge" yet.
+        return False, {}
+
     region = {
         'start': df.index[start_idx],
         'end': df.index[end_idx],
-        'label': 'Cup and Handle'
+        'label': label,
+        'status': status
     }
     return True, region
 
@@ -93,8 +108,9 @@ def is_range_breakout(df):
         peak_idx_abs = n_total - lookback
         peak_price = close_prices.iloc[peak_idx_abs]
 
-        # 1. Check if this peak was a local high (higher than immediate neighbors)
-        if peak_price < close_prices.iloc[peak_idx_abs-1] or peak_price < close_prices.iloc[peak_idx_abs+1]:
+        # 1. Check if this peak was a local high (higher than or equal to immediate neighbors)
+        # We use strictly greater to avoid flat tops being picked as multiple peaks
+        if peak_price <= close_prices.iloc[peak_idx_abs-1] or peak_price <= close_prices.iloc[peak_idx_abs+1]:
             continue
 
         # 2. Check if this high was NOT broken for at least 20 sessions AFTER it was formed,
@@ -117,7 +133,19 @@ def is_range_breakout(df):
             region = {
                 'start': df.index[peak_idx_abs],
                 'end': df.index[-1],
-                'label': 'Range Breakout'
+                'label': 'Range Breakout',
+                'status': 'Broken'
+            }
+            return True, region
+
+        # 5. On the Verge check: current price is within 1.5% of peak_price but hasn't broken it
+        current_price = close_prices.iloc[-1]
+        if current_price <= peak_price and current_price >= peak_price * 0.985:
+            region = {
+                'start': df.index[peak_idx_abs],
+                'end': df.index[-1],
+                'label': 'Breakout (Verge)',
+                'status': 'Verge'
             }
             return True, region
 

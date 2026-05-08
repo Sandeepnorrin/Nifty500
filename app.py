@@ -37,9 +37,13 @@ def create_chart(df, symbol, timeframe="Daily", regions=None):
     # Add highlights for patterns
     if regions:
         for region in regions:
+            color = "blue"
+            if region.get('status') == 'Verge':
+                color = "orange"
+
             fig.add_vrect(
                 x0=region['start'], x1=region['end'],
-                fillcolor="blue", opacity=0.2,
+                fillcolor=color, opacity=0.2,
                 layer="below", line_width=0,
                 annotation_text=region['label'],
                 annotation_position="top left",
@@ -156,6 +160,8 @@ def main():
     pattern_options = ["Cup and Handle", "Range Breakout", "Tight Setup"]
     selected_patterns = st.sidebar.multiselect("Select Patterns", pattern_options, default=pattern_options)
     timeframe_option = st.sidebar.radio("Pattern Timeframe", ["Daily", "Weekly", "Both"], index=0)
+
+    breakout_mode = st.sidebar.radio("Breakout Status", ["Both", "Already Broken", "On the Verge"], index=0)
 
     col_ref1, col_ref2 = st.sidebar.columns(2)
     if col_ref1.button("Resume Fetch"):
@@ -346,6 +352,24 @@ def main():
 
                         if found_daily or found_weekly:
                             patterns_found.append("Tight Setup")
+
+                    # Final filtering based on breakout mode
+                    if breakout_mode != "Both":
+                        all_regions = regions_daily + regions_weekly
+                        has_broken = any(r.get('status') == 'Broken' for r in all_regions)
+                        has_verge = any(r.get('status') == 'Verge' for r in all_regions)
+
+                        # Tight Setup is always considered "Active" but doesn't have broken/verge status
+                        # If user specifically wants breakouts, and it's ONLY tight setup, we might skip?
+                        # Let's assume Tight Setup is neutral and doesn't interfere.
+
+                        if breakout_mode == "Already Broken" and not has_broken:
+                            patterns_found = [p for p in patterns_found if p == "Tight Setup"]
+                        elif breakout_mode == "On the Verge" and not has_verge:
+                            patterns_found = [p for p in patterns_found if p == "Tight Setup"]
+
+                    if not patterns_found:
+                        continue
 
                     if patterns_found:
                         results.append({
