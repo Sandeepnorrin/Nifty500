@@ -70,7 +70,7 @@ def is_cup_and_handle(df):
     if current_price > left_high:
         status = 'Broken'
         label = 'Cup and Handle'
-    elif current_price >= left_high * 0.985:
+    elif current_price >= left_high * 0.98:
         status = 'Verge'
         label = 'Cup & Handle (Verge)'
     else:
@@ -138,9 +138,9 @@ def is_range_breakout(df):
             }
             return True, region
 
-        # 5. On the Verge check: current price is within 1.5% of peak_price but hasn't broken it
+        # 5. On the Verge check: current price is within 2% of peak_price but hasn't broken it
         current_price = close_prices.iloc[-1]
-        if current_price <= peak_price and current_price >= peak_price * 0.985:
+        if current_price <= peak_price and current_price >= peak_price * 0.98:
             region = {
                 'start': df.index[peak_idx_abs],
                 'end': df.index[-1],
