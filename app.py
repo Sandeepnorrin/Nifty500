@@ -39,6 +39,38 @@ def main():
     pattern_options = ["Cup and Handle", "Range Breakout", "Tight Setup"]
     selected_patterns = st.sidebar.multiselect("Select Technical Patterns", pattern_options, default=pattern_options)
 
+    st.sidebar.markdown("---")
+    search_symbol = st.sidebar.text_input("Search Stock (e.g., RELIANCE, TCS)", "").upper().strip()
+
+    if search_symbol:
+        st.subheader(f"Search Result: {search_symbol}")
+        with st.spinner(f"Fetching data for {search_symbol}..."):
+            df_daily = get_price_data(search_symbol, period="1y", interval="1d")
+            df_weekly = get_price_data(search_symbol, period="2y", interval="1wk")
+
+            if not df_daily.empty:
+                df_daily = calculate_ema(df_daily)
+                df_weekly = calculate_ema(df_weekly)
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    chart_daily = create_chart(df_daily, search_symbol, "Daily")
+                    if chart_daily: st.plotly_chart(chart_daily, use_container_width=True)
+                with col2:
+                    chart_weekly = create_chart(df_weekly, search_symbol, "Weekly")
+                    if chart_weekly: st.plotly_chart(chart_weekly, use_container_width=True)
+
+                # Also show fundamentals if possible
+                fundamentals = get_stock_fundamentals(search_symbol)
+                if fundamentals:
+                    st.write(f"**Fundamentals:** ROE: {fundamentals.get('ROE') or 'N/A'}%, ROCE: {fundamentals.get('ROCE') or 'N/A'}%")
+                    fii = fundamentals.get('FII_Holdings', [])
+                    dii = fundamentals.get('DII_Holdings', [])
+                    st.write(f"**FII Holdings (last 3 qtrs):** {fii}")
+                    st.write(f"**DII Holdings (last 3 qtrs):** {dii}")
+            else:
+                st.error(f"Could not find data for symbol: {search_symbol}")
+
     if st.sidebar.button("Run Analysis"):
         with st.status("Analyzing Nifty 500 stocks...", expanded=True) as status:
             st.write("Fetching Nifty 500 list...")
