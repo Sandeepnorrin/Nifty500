@@ -106,12 +106,12 @@ def get_price_data(symbol, period="1y", interval="1d"):
         print(f"Error fetching price data for {symbol}: {e}")
         return pd.DataFrame()
 
-def get_sector_data(sector_index_symbol, period="1y"):
+def get_sector_data(sector_index_symbol, period="2y", interval="1d"):
     """
     Fetches historical price data for sectoral indices.
     """
     try:
-        data = yf.download(sector_index_symbol + ".NS", period=period, progress=False)
+        data = yf.download(sector_index_symbol + ".NS", period=period, interval=interval, progress=False)
         # Handle MultiIndex columns in newer yfinance versions
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)

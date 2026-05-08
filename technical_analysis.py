@@ -117,8 +117,9 @@ def is_range_breakout(df):
 
 def is_tight_setup(stock_df, sector_df):
     """
-    Tight Setup: Stock holding up within 3% of 5-day high
-    while sectoral index drops > 2% over last 5 days.
+    Tight Setup: Stock holding up within 3% of recent high (5 periods)
+    while sectoral index drops > 2% over last 5 periods.
+    Works for both daily and weekly timeframes.
     """
     if len(stock_df) < 5 or len(sector_df) < 5:
         return False
@@ -128,22 +129,31 @@ def is_tight_setup(stock_df, sector_df):
     if isinstance(sector_close, pd.DataFrame):
         sector_close = sector_close.iloc[:, 0]
 
+    # Find the matching dates or just use the last 5 periods if indices align
+    # For simplicity, we assume they align or we just compare the last 5 available candles
     sector_drop = (sector_close.iloc[-1] - sector_close.iloc[-5]) / sector_close.iloc[-5]
 
-    if (sector_drop > -0.02).any() if isinstance(sector_drop, pd.Series) else sector_drop > -0.02: # Needs to drop more than 2%
-        return False
+    # We want sector_drop < -0.02 (more than 2% drop)
+    # Using np.any() or similar to handle potential series, but it should be a scalar here
+    if hasattr(sector_drop, 'any'):
+        if not (sector_drop < -0.02).any():
+            return False
+    else:
+        if sector_drop >= -0.02:
+            return False
 
     # Stock holding up check
     stock_close = stock_df['Close']
     if isinstance(stock_close, pd.DataFrame):
         stock_close = stock_close.iloc[:, 0]
 
-    stock_5d_high = stock_close.iloc[-5:].max()
+    stock_recent_high = stock_close.iloc[-5:].max()
     stock_current = stock_close.iloc[-1]
 
-    # Within 3% of 5-day high
-    diff_pct = (stock_5d_high - stock_current) / stock_5d_high
-    if (diff_pct < 0.03).any() if isinstance(diff_pct, pd.Series) else diff_pct < 0.03:
-        return True
+    # Within 3% of recent high
+    diff_pct = (stock_recent_high - stock_current) / stock_recent_high
 
-    return False
+    if hasattr(diff_pct, 'any'):
+        return (diff_pct < 0.03).any()
+    else:
+        return diff_pct < 0.03
