@@ -145,6 +145,7 @@ def fetch_and_save_fundamentals():
                 'DII Q-1': dii[2],
                 'DII Curr': dii[3],
                 'Category': category,
+                'Market Cap (Cr)': funds.get('Market Cap') or 0.0,
                 '52W High': round(float(high_52w), 2),
                 'Current Price': round(float(curr_price), 2),
                 '% From 52W High': round(float(pct_from_high), 2)
@@ -164,8 +165,24 @@ def fetch_and_save_fundamentals():
 def load_fundamentals():
     try:
         df = pd.read_csv(FUNDAMENTALS_FILE)
+
+        # Assign Market Cap Categories based on Nifty 500 rules:
+        # Top 100: Large, 101-250: Mid, 251-500: Small
+        if 'Market Cap (Cr)' in df.columns:
+            # Sort by Market Cap descending and assign rank
+            df = df.sort_values(by='Market Cap (Cr)', ascending=False)
+            df['Rank'] = range(1, len(df) + 1)
+
+            def get_mcap_cat(rank):
+                if rank <= 100: return 'Large'
+                elif rank <= 250: return 'Mid'
+                return 'Small'
+
+            df['Market Cap Cat'] = df['Rank'].apply(get_mcap_cat)
+            df = df.drop(columns=['Rank'])
+
         # Check if new columns exist, if not, we might need a refresh
-        required_cols = ['52W High', 'Current Price', '% From 52W High']
+        required_cols = ['52W High', 'Current Price', '% From 52W High', 'Market Cap (Cr)']
         if not all(col in df.columns for col in required_cols) or 'Category' not in df.columns:
             st.warning("Fundamentals data is outdated. Please click 'Full Refresh' to update all columns.")
 
@@ -196,6 +213,8 @@ def main():
         with col2:
             industries = sorted(fundamentals_df['Industry'].unique().tolist())
             selected_industries = st.multiselect("Industries", industries, default=[])
+            mcap_options = ["Large", "Mid", "Small"]
+            selected_mcap = st.multiselect("Market Cap", mcap_options, default=mcap_options)
             cat_options = ["Any", "FII", "DII", "Both"]
             selected_cat = st.selectbox("FII/DII Increase Category", cat_options)
         with col3:
@@ -232,6 +251,9 @@ def main():
 
     if selected_industries:
         filtered_df = filtered_df[filtered_df['Industry'].isin(selected_industries)]
+
+    if 'Market Cap Cat' in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df['Market Cap Cat'].isin(selected_mcap)]
 
     if selected_cat != "Any":
         filtered_df = filtered_df[filtered_df['Category'] == selected_cat]

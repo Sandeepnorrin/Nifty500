@@ -66,6 +66,8 @@ def get_stock_fundamentals(symbol):
                                 fundamentals['ROE'] = float(value)
                             elif name == 'ROCE':
                                 fundamentals['ROCE'] = float(value)
+                            elif 'Market Cap' in name:
+                                fundamentals['Market Cap'] = float(value)
                         except ValueError:
                             pass
 
