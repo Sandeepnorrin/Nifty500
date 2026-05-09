@@ -117,6 +117,12 @@ def fetch_and_save_fundamentals():
 
             category = get_holding_category(fii, dii)
 
+            # Calculate combined change (Current - 2 quarters ago)
+            # fii: [Q-3, Q-2, Q-1, Curr]
+            comb_curr = fii[3] + dii[3]
+            comb_prev = fii[1] + dii[1]
+            comb_change = comb_curr - comb_prev
+
             # Also get 52-week high info
             df_3y = get_price_data(symbol, period="3y")
             high_52w = 0.0
@@ -145,6 +151,7 @@ def fetch_and_save_fundamentals():
                 'DII Q-1': dii[2],
                 'DII Curr': dii[3],
                 'Category': category,
+                'Combined Change (%)': round(float(comb_change), 2),
                 'Market Cap (Cr)': funds.get('Market Cap') or 0.0,
                 '52W High': round(float(high_52w), 2),
                 'Current Price': round(float(curr_price), 2),
@@ -181,8 +188,17 @@ def load_fundamentals():
             df['Market Cap Cat'] = df['Rank'].apply(get_mcap_cat)
             df = df.drop(columns=['Rank'])
 
+        if 'Combined Change (%)' in df.columns:
+            def get_change_bucket(val):
+                if val <= 1.5: return '<= 1.5%'
+                elif val <= 3.0: return '1.5% - 3%'
+                elif val <= 7.0: return '3% - 7%'
+                elif val <= 10.0: return '7% - 10%'
+                return '> 10%'
+            df['Change Bucket'] = df['Combined Change (%)'].apply(get_change_bucket)
+
         # Check if new columns exist, if not, we might need a refresh
-        required_cols = ['52W High', 'Current Price', '% From 52W High', 'Market Cap (Cr)']
+        required_cols = ['52W High', 'Current Price', '% From 52W High', 'Market Cap (Cr)', 'Combined Change (%)']
         if not all(col in df.columns for col in required_cols) or 'Category' not in df.columns:
             st.warning("Fundamentals data is outdated. Please click 'Full Refresh' to update all columns.")
 
@@ -219,6 +235,8 @@ def main():
             selected_cat = st.selectbox("FII/DII Increase Category", cat_options)
         with col3:
             high_filter = st.slider("Max % Away from 52W High", 0, 100, 20)
+            change_options = ["<= 1.5%", "1.5% - 3%", "3% - 7%", "7% - 10%", "> 10%"]
+            selected_change = st.multiselect("Combined Holding Change", change_options, default=change_options)
             pattern_options = ["Cup and Handle", "Range Breakout", "Tight Setup"]
             selected_patterns = st.multiselect("Select Patterns", pattern_options, default=pattern_options)
         with col4:
@@ -254,6 +272,9 @@ def main():
 
     if 'Market Cap Cat' in filtered_df.columns:
         filtered_df = filtered_df[filtered_df['Market Cap Cat'].isin(selected_mcap)]
+
+    if 'Change Bucket' in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df['Change Bucket'].isin(selected_change)]
 
     if selected_cat != "Any":
         filtered_df = filtered_df[filtered_df['Category'] == selected_cat]
