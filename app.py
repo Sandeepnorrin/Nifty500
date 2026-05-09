@@ -191,9 +191,9 @@ def load_fundamentals():
         if 'Combined Change (%)' in df.columns:
             def get_change_bucket(val):
                 if val <= 1.5: return '<= 1.5%'
-                elif val <= 3.0: return '1.5% - 3%'
-                elif val <= 7.0: return '3% - 7%'
-                elif val <= 10.0: return '7% - 10%'
+                elif 1.5 < val <= 3.0: return '1.5% - 3%'
+                elif 3.0 < val <= 7.0: return '3% - 7%'
+                elif 7.0 < val <= 10.0: return '7% - 10%'
                 return '> 10%'
             df['Change Bucket'] = df['Combined Change (%)'].apply(get_change_bucket)
 
@@ -287,7 +287,7 @@ def main():
 
     with tab1:
         st.subheader("Nifty 500 Fundamental Overview")
-        st.info("Showing stocks where FII or DII holdings increased in back-to-back 2 quarters.")
+        st.info("Showing stocks where FII or DII holdings increased in back-to-back 2 quarters. Change is (Curr FII+DII) - (FII+DII 2 Qtrs Ago).")
 
         view_mode = st.radio("View Mode", ["Table", "Charts"], horizontal=True)
 
