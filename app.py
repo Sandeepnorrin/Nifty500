@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from data_fetcher import get_nifty500_stocks, get_stock_fundamentals, get_price_data, get_sector_data
 from fundamental_analysis import filter_fundamentals, get_holding_category
-from technical_analysis import calculate_ema, is_cup_and_handle, is_range_breakout, is_tight_setup
+from technical_analysis import calculate_ema, is_cup_and_handle, is_range_breakout, is_tight_setup, is_ema_aligned
 from sector_mapping import get_sector_index
 import time
 
@@ -34,6 +34,13 @@ def create_chart(df, symbol, timeframe="Daily", regions=None):
             start_date = last_date - pd.DateOffset(years=2)
         fig.update_xaxes(range=[start_date, last_date], row=1, col=1)
         fig.update_xaxes(range=[start_date, last_date], row=2, col=1)
+
+        # Auto-scale Y-axis based on visible price range
+        visible_df = df[df.index >= start_date]
+        if not visible_df.empty:
+            y_min = visible_df['Low'].min() * 0.95
+            y_max = visible_df['High'].max() * 1.05
+            fig.update_yaxes(range=[y_min, y_max], row=1, col=1)
 
     # Add EMAs
     for ema_name in ['EMA10', 'EMA20', 'EMA50', 'EMA200']:
@@ -243,6 +250,7 @@ def main():
             timeframe_option = st.radio("Pattern Timeframe", ["Daily", "Weekly", "Both"], index=0, horizontal=True)
             breakout_mode = st.radio("Breakout Status", ["On the Verge", "Already Broken", "Both"], index=0, horizontal=True)
             dist_filter = st.slider("Max % from Breakout Price", 0, 100, 5)
+            ema_filter = st.selectbox("EMA Alignment (20>50>200)", ["All", "Yes", "No"], index=0)
 
         col_btn1, col_btn2, col_btn3, _ = st.columns([1, 1, 1, 5])
         if col_btn1.button("Resume Fetch"):
@@ -441,6 +449,18 @@ def main():
 
                         if found_daily or found_weekly:
                             patterns_found.append("Tight Setup")
+
+                    # Final filtering based on breakout mode
+                    # EMA Filter check
+                    if ema_filter != "All":
+                        is_aligned = False
+                        if timeframe_option in ["Daily", "Both"] and not df_daily.empty:
+                            if is_ema_aligned(df_daily): is_aligned = True
+                        if not is_aligned and timeframe_option in ["Weekly", "Both"] and not df_weekly.empty:
+                            if is_ema_aligned(df_weekly): is_aligned = True
+
+                        if ema_filter == "Yes" and not is_aligned: continue
+                        if ema_filter == "No" and is_aligned: continue
 
                     # Final filtering based on breakout mode
                     if breakout_mode != "Both":

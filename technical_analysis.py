@@ -205,3 +205,18 @@ def is_tight_setup(stock_df, sector_df):
         return True, region
 
     return False, {}
+
+def is_ema_aligned(df):
+    """
+    Checks if EMA20 > EMA50 > EMA200 for the latest candle.
+    """
+    if df.empty or 'EMA20' not in df.columns or 'EMA50' not in df.columns or 'EMA200' not in df.columns:
+        return False
+
+    last = df.iloc[-1]
+
+    # Check for NaN
+    if pd.isna(last['EMA20']) or pd.isna(last['EMA50']) or pd.isna(last['EMA200']):
+        return False
+
+    return last['EMA20'] > last['EMA50'] and last['EMA50'] > last['EMA200']
