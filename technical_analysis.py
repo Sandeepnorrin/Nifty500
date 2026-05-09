@@ -220,3 +220,64 @@ def is_ema_aligned(df):
         return False
 
     return last['EMA20'] > last['EMA50'] and last['EMA50'] > last['EMA200']
+
+def is_52w_high_breakout(df):
+    """
+    52W High Breakout with Volume:
+    - Current price > 52-week high (excluding recent sessions).
+    - Volume > 20-period average volume.
+    - Verge: Within 10% of 52W high OR sudden green candles with huge volume.
+    """
+    if len(df) < 252: return False, {}
+
+    close_prices = df['Close']
+    high_prices = df['High']
+    volumes = df['Volume']
+
+    if isinstance(close_prices, pd.DataFrame): close_prices = close_prices.iloc[:, 0]
+    if isinstance(high_prices, pd.DataFrame): high_prices = high_prices.iloc[:, 0]
+    if isinstance(volumes, pd.DataFrame): volumes = volumes.iloc[:, 0]
+
+    # Calculate 52W high (excluding last 5 sessions to identify the 'peak' to break)
+    lookback_52w = 252
+    historic_52w_high = high_prices.iloc[-lookback_52w:-5].max()
+
+    avg_volume = volumes.tail(20).mean()
+    curr_volume = volumes.iloc[-1]
+    curr_price = close_prices.iloc[-1]
+
+    # 1. Breakout check
+    if curr_price > historic_52w_high and curr_volume > avg_volume:
+        region = {
+            'start': df.index[-5],
+            'end': df.index[-1],
+            'label': '52W High Breakout (Vol)',
+            'status': 'Broken',
+            'breakout_price': float(historic_52w_high)
+        }
+        return True, region
+
+    # 2. On the Verge check:
+    # Method A: Price is consolidating near 10% of 52W high
+    is_near_high = curr_price >= historic_52w_high * 0.90
+
+    # Method B: Sudden green candles with huge volume (last 3 sessions)
+    recent_vols = volumes.tail(3)
+    recent_closes = close_prices.tail(3)
+    recent_opens = df['Open'].tail(3)
+    if isinstance(recent_opens, pd.DataFrame): recent_opens = recent_opens.iloc[:, 0]
+
+    huge_vol_spike = (recent_vols > avg_volume * 2).any()
+    green_candles = (recent_closes > recent_opens).any()
+
+    if is_near_high or (huge_vol_spike and green_candles):
+        region = {
+            'start': df.index[-5],
+            'end': df.index[-1],
+            'label': '52W High (Verge)',
+            'status': 'Verge',
+            'breakout_price': float(historic_52w_high)
+        }
+        return True, region
+
+    return False, {}

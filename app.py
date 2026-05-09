@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from data_fetcher import get_nifty500_stocks, get_stock_fundamentals, get_price_data, get_sector_data
 from fundamental_analysis import filter_fundamentals, get_holding_category
-from technical_analysis import calculate_ema, is_cup_and_handle, is_range_breakout, is_tight_setup, is_ema_aligned
+from technical_analysis import calculate_ema, is_cup_and_handle, is_range_breakout, is_tight_setup, is_ema_aligned, is_52w_high_breakout
 from sector_mapping import get_sector_index
 import time
 
@@ -244,7 +244,7 @@ def main():
             high_filter = st.slider("Max % Away from 52W High", 0, 100, 20)
             change_options = ["<= 1.5%", "1.5% - 3%", "3% - 7%", "7% - 10%", "> 10%"]
             selected_change = st.multiselect("Combined Holding Change", change_options, default=change_options)
-            pattern_options = ["Cup and Handle", "Range Breakout", "Tight Setup"]
+            pattern_options = ["Cup and Handle", "Range Breakout", "Tight Setup", "52W High Breakout"]
             selected_patterns = st.multiselect("Select Patterns", pattern_options, default=pattern_options)
         with col4:
             timeframe_option = st.radio("Pattern Timeframe", ["Daily", "Weekly", "Both"], index=0, horizontal=True)
@@ -301,7 +301,22 @@ def main():
 
         if view_mode == "Table":
             st.write(f"Showing {len(filtered_df)} stocks matching filters.")
-            st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+
+            # Logical column reordering
+            cols = filtered_df.columns.tolist()
+            desired_order = [
+                'Symbol', 'Industry', 'Current Price', 'Market Cap (Cr)', 'Market Cap Cat',
+                'ROE (%)', 'ROCE (%)', '% From 52W High', 'Combined Change (%)', 'Change Bucket',
+                'Category', 'FII Curr', 'FII Q-1', 'FII Q-2', 'FII Q-3',
+                'DII Curr', 'DII Q-1', 'DII Q-2', 'DII Q-3'
+            ]
+
+            # Use only columns that exist in the dataframe
+            final_cols = [c for c in desired_order if c in cols]
+            # Add any remaining columns
+            final_cols += [c for c in cols if c not in final_cols]
+
+            st.dataframe(filtered_df[final_cols], use_container_width=True, hide_index=True)
         else:
             chart_timeframe = st.selectbox("Chart Timeframe", ["Daily", "Weekly"], key="tab1_timeframe")
             st.write(f"Displaying charts for {len(filtered_df)} stocks.")
@@ -347,7 +362,12 @@ def main():
                     regs_weekly = []
                     patterns = []
 
-                    for p_name, p_func in [("Cup and Handle", is_cup_and_handle), ("Range Breakout", is_range_breakout)]:
+                    strategies_search = [
+                        ("Cup and Handle", is_cup_and_handle),
+                        ("Range Breakout", is_range_breakout),
+                        ("52W High Breakout", is_52w_high_breakout)
+                    ]
+                    for p_name, p_func in strategies_search:
                         f_d, r_d = p_func(df_daily)
                         if f_d:
                             regs_daily.append(r_d)
@@ -418,7 +438,12 @@ def main():
                     regions_weekly = []
 
                     # Pattern detection
-                    for p_name, p_func in [("Cup and Handle", is_cup_and_handle), ("Range Breakout", is_range_breakout)]:
+                    strategies = [
+                        ("Cup and Handle", is_cup_and_handle),
+                        ("Range Breakout", is_range_breakout),
+                        ("52W High Breakout", is_52w_high_breakout)
+                    ]
+                    for p_name, p_func in strategies:
                         if p_name in selected_patterns:
                             found_daily = False
                             found_weekly = False
