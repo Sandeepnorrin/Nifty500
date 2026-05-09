@@ -117,11 +117,11 @@ def fetch_and_save_fundamentals():
 
             category = get_holding_category(fii, dii)
 
-            # Calculate combined change (Current - 2 quarters ago)
+            # Calculate combined change (Current - Previous Quarter)
             # fii: [Q-3, Q-2, Q-1, Curr]
-            comb_curr = fii[3] + dii[3]
-            comb_prev = fii[1] + dii[1]
-            comb_change = comb_curr - comb_prev
+            fii_change = fii[3] - fii[2]
+            dii_change = dii[3] - dii[2]
+            comb_change = fii_change + dii_change
 
             # Also get 52-week high info
             df_3y = get_price_data(symbol, period="3y")
@@ -287,7 +287,7 @@ def main():
 
     with tab1:
         st.subheader("Nifty 500 Fundamental Overview")
-        st.info("Showing stocks where FII or DII holdings increased in back-to-back 2 quarters. Change is (Curr FII+DII) - (FII+DII 2 Qtrs Ago).")
+        st.info("Showing stocks where FII or DII holdings increased in back-to-back 2 quarters. Change is (Curr FII - Prev FII) + (Curr DII - Prev DII).")
 
         view_mode = st.radio("View Mode", ["Table", "Charts"], horizontal=True)
 
