@@ -2,24 +2,38 @@ def get_holding_category(fii_holdings, dii_holdings):
     """
     Categorizes based on back-to-back 2 quarters increase.
     fii_holdings: list of holdings [Q-3, Q-2, Q-1, Q]
-    """
-    fii_increased = False
-    if len(fii_holdings) >= 3:
-        # Increase from Q-2 to Q-1 AND from Q-1 to Q
-        if fii_holdings[-1] > fii_holdings[-2] and fii_holdings[-2] > fii_holdings[-3]:
-            fii_increased = True
 
-    dii_increased = False
+    Eligibility (for scan inclusion): Q > Q-1 > Q-2 (for either FII or DII)
+    Category Label:
+    - "Both" if both FII and DII increased in latest quarter (Q > Q-1).
+    - "FII" if only FII increased in latest quarter.
+    - "DII" if only DII increased in latest quarter.
+    """
+    fii_eligible = False
+    if len(fii_holdings) >= 3:
+        if fii_holdings[-1] > fii_holdings[-2] and fii_holdings[-2] > fii_holdings[-3]:
+            fii_eligible = True
+
+    dii_eligible = False
     if len(dii_holdings) >= 3:
         if dii_holdings[-1] > dii_holdings[-2] and dii_holdings[-2] > dii_holdings[-3]:
-            dii_increased = True
+            dii_eligible = True
 
-    if fii_increased and dii_increased:
+    # Must have back-to-back increase in AT LEAST one to be included
+    if not (fii_eligible or dii_eligible):
+        return "None"
+
+    # Category label based on latest quarter movement
+    fii_latest_up = len(fii_holdings) >= 2 and fii_holdings[-1] > fii_holdings[-2]
+    dii_latest_up = len(dii_holdings) >= 2 and dii_holdings[-1] > dii_holdings[-2]
+
+    if fii_latest_up and dii_latest_up:
         return "Both"
-    elif fii_increased:
+    elif fii_latest_up:
         return "FII"
-    elif dii_increased:
+    elif dii_latest_up:
         return "DII"
+
     return "None"
 
 def filter_fundamentals(fundamentals, roe_min, roce_min):
