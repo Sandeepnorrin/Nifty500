@@ -67,7 +67,9 @@ def get_stock_fundamentals(symbol):
                             elif name == 'ROCE':
                                 fundamentals['ROCE'] = float(value)
                             elif 'Market Cap' in name:
-                                fundamentals['Market Cap'] = float(value)
+                                # Value might look like '₹\n        19,42,189\n        \n          Cr.'
+                                clean_val = value.replace('₹', '').replace('Cr.', '').replace(',', '').strip().split('\n')[0].strip()
+                                fundamentals['Market Cap'] = float(clean_val)
                         except ValueError:
                             pass
 
