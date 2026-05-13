@@ -19,19 +19,11 @@ def get_holding_category(fii_holdings, dii_holdings):
         if dii_holdings[-1] > dii_holdings[-2] and dii_holdings[-2] > dii_holdings[-3]:
             dii_eligible = True
 
-    # Must have back-to-back increase in AT LEAST one to be included
-    if not (fii_eligible or dii_eligible):
-        return "None"
-
-    # Category label based on latest quarter movement
-    fii_latest_up = len(fii_holdings) >= 2 and fii_holdings[-1] > fii_holdings[-2]
-    dii_latest_up = len(dii_holdings) >= 2 and dii_holdings[-1] > dii_holdings[-2]
-
-    if fii_latest_up and dii_latest_up:
+    if fii_eligible and dii_eligible:
         return "Both"
-    elif fii_latest_up:
+    elif fii_eligible:
         return "FII"
-    elif dii_latest_up:
+    elif dii_eligible:
         return "DII"
 
     return "None"
