@@ -28,7 +28,7 @@ def get_stock_fundamentals(symbol):
     Scrapes ROE, ROCE and FII/DII holdings from Screener.in
     Note: Screener.in uses symbols without .NS suffix.
     """
-    url = f"https://www.screener.in/company/{symbol}/"
+    url = f"https://www.screener.in/company/{symbol}/consolidated/"
     session = requests.Session()
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
