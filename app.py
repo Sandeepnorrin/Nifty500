@@ -327,7 +327,7 @@ def main():
             # Add any remaining columns
             final_cols += [c for c in cols if c not in final_cols]
 
-            st.dataframe(filtered_df[final_cols], use_container_width=True, hide_index=True)
+            st.dataframe(filtered_df[final_cols], width="stretch", hide_index=True)
         else:
             chart_timeframe = st.selectbox("Chart Timeframe", ["Daily", "Weekly"], key="tab1_timeframe")
             st.write(f"Displaying charts for {len(filtered_df)} stocks.")
@@ -351,7 +351,7 @@ def main():
                     if not df_price.empty:
                         df_price = calculate_ema(df_price)
                         fig = create_chart(df_price, symbol, chart_timeframe)
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, width="stretch")
                     else:
                         st.error(f"Failed to fetch data for {symbol}")
                     st.divider()
@@ -394,10 +394,10 @@ def main():
                     col1, col2 = st.columns(2)
                     with col1:
                         chart_daily = create_chart(df_daily, search_symbol, "Daily", regions=regs_daily)
-                        if chart_daily: st.plotly_chart(chart_daily, use_container_width=True)
+                        if chart_daily: st.plotly_chart(chart_daily, width="stretch")
                     with col2:
                         chart_weekly = create_chart(df_weekly, search_symbol, "Weekly", regions=regs_weekly)
-                        if chart_weekly: st.plotly_chart(chart_weekly, use_container_width=True)
+                        if chart_weekly: st.plotly_chart(chart_weekly, width="stretch")
 
                     # Also show fundamentals if possible
                     fundamentals = get_stock_fundamentals(search_symbol)
@@ -581,7 +581,10 @@ def main():
                         count = notion.sync_stocks(notion_list)
                         st.success(f"Successfully synced/updated {count} records in Notion!")
                     except Exception as e:
-                        st.error(f"Notion sync failed: {e}")
+                        error_msg = str(e)
+                        st.error(f"Notion sync failed: {error_msg}")
+                        if "object_not_found" in error_msg or "404" in error_msg:
+                            st.warning("💡 **Tip:** Notion returned a '404 Object Not Found' error. This usually means the database ID is incorrect or your Integration hasn't been shared with the database. Please go to your Notion Database -> Options (...) -> Connect to -> Select 'Sandeep Norrin stock Tracker'.")
 
             if not results:
                 st.warning("No stocks found matching both Fundamental and Technical criteria.")
@@ -600,13 +603,13 @@ def main():
                                 with col1:
                                     if not res['df_daily'].empty:
                                         chart_daily = create_chart(res['df_daily'], res['Symbol'], "Daily", regions=res['regions_daily'])
-                                        if chart_daily: st.plotly_chart(chart_daily, use_container_width=True)
+                                        if chart_daily: st.plotly_chart(chart_daily, width="stretch")
                                     else:
                                         st.write("Daily chart not available (filtered out)")
                                 with col2:
                                     if not res['df_weekly'].empty:
                                         chart_weekly = create_chart(res['df_weekly'], res['Symbol'], "Weekly", regions=res['regions_weekly'])
-                                        if chart_weekly: st.plotly_chart(chart_weekly, use_container_width=True)
+                                        if chart_weekly: st.plotly_chart(chart_weekly, width="stretch")
                                     else:
                                         st.write("Weekly chart not available (filtered out)")
 

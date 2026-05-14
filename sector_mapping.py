@@ -4,7 +4,7 @@ SECTOR_MAP = {
     'IT': '^CNXIT', # Nifty IT
     'Automobile and Auto Components': '^CNXAUTO', # Nifty Auto
     'Bank': '^NSEBANK', # Nifty Bank
-    'Consumer Durables': '^CNXCONSR', # Nifty Consumer Durables
+    'Consumer Durables': '^NSEI', # Nifty 50 fallback as ^CNXCONSR is unreliable
     'Fast Moving Consumer Goods': '^CNXFMCG', # Nifty FMCG
     'Healthcare': '^CNXPHARMA', # Nifty Pharma
     'Oil Gas & Consumable Fuels': '^CNXENERGY', # Nifty Energy (approx)

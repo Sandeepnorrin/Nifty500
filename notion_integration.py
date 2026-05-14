@@ -41,8 +41,9 @@ class NotionSync:
             results = response.json().get("results", [])
             return results[0] if results else None
         else:
-            print(f"Error querying Notion: {response.text}")
-            return None
+            error_text = response.text
+            print(f"Error querying Notion: {error_text}")
+            raise Exception(f"Notion API Error: {error_text}")
 
     def create_record(self, data):
         """
@@ -67,7 +68,9 @@ class NotionSync:
         }
 
         response = requests.post(url, headers=self.headers, json=payload)
-        return response.status_code == 200
+        if response.status_code != 200:
+             raise Exception(f"Notion Create Error: {response.text}")
+        return True
 
     def update_record(self, page_id, data):
         """
@@ -83,7 +86,9 @@ class NotionSync:
 
         payload = {"properties": properties}
         response = requests.patch(url, headers=self.headers, json=payload)
-        return response.status_code == 200
+        if response.status_code != 200:
+             raise Exception(f"Notion Update Error: {response.text}")
+        return True
 
     def sync_stocks(self, stocks_list):
         """
