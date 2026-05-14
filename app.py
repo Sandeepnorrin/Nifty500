@@ -238,6 +238,19 @@ def main():
     notion_db_id = st.sidebar.text_input("Notion Database ID", value="360f8ac4f6cb8065bbc1e38a22eda951")
     enable_notion = st.sidebar.checkbox("Enable Notion Sync", value=True)
 
+    if st.sidebar.button("🔌 Test Notion Connection"):
+        if not notion_api_key or not notion_db_id:
+            st.sidebar.error("Please provide both API Key and Database ID")
+        else:
+            notion = NotionSync(notion_api_key, notion_db_id)
+            success, msg = notion.test_connection()
+            if success:
+                st.sidebar.success(msg)
+            else:
+                st.sidebar.error(msg)
+                if "404" in msg or "object_not_found" in msg:
+                    st.sidebar.warning("💡 **Tip:** Go to your Notion Database -> Options (...) -> Connect to -> Select your integration.")
+
     # Top Filters
     with st.expander("🛠️ Global Filters & Settings", expanded=True):
         col1, col2, col3, col4 = st.columns(4)

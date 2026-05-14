@@ -90,6 +90,17 @@ class NotionSync:
              raise Exception(f"Notion Update Error: {response.text}")
         return True
 
+    def test_connection(self):
+        """
+        Tests the connection by retrieving database metadata.
+        """
+        url = f"https://api.notion.com/v1/databases/{self.database_id}"
+        response = requests.get(url, headers=self.headers)
+        if response.status_code == 200:
+            return True, "Connection Successful!"
+        else:
+            return False, f"Connection Failed: {response.text}"
+
     def sync_stocks(self, stocks_list):
         """
         Main entry point to sync a list of stocks to Notion.
