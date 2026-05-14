@@ -6,6 +6,7 @@ from data_fetcher import get_nifty500_stocks, get_stock_fundamentals, get_price_
 from fundamental_analysis import filter_fundamentals, get_holding_category
 from technical_analysis import calculate_ema, is_cup_and_handle, is_range_breakout, is_tight_setup, is_ema_aligned, is_52w_high_breakout
 from sector_mapping import get_sector_index
+from notion_integration import NotionSync
 import time
 
 def create_chart(df, symbol, timeframe="Daily", regions=None):
@@ -226,6 +227,16 @@ def main():
 
     # Load fundamentals first to populate filters
     fundamentals_df = load_fundamentals()
+
+    # Notion Settings in Sidebar
+    st.sidebar.header("📝 Notion Settings")
+    # API key is intentionally not hardcoded for security.
+    # User can enter it in the UI or set it as an environment variable NOTION_API_KEY
+    import os
+    default_key = os.environ.get("NOTION_API_KEY", "")
+    notion_api_key = st.sidebar.text_input("Notion API Key", value=default_key, type="password")
+    notion_db_id = st.sidebar.text_input("Notion Database ID", value="360f8ac4f6cb8065bbc1e38a22eda951")
+    enable_notion = st.sidebar.checkbox("Enable Notion Sync", value=True)
 
     # Top Filters
     with st.expander("🛠️ Global Filters & Settings", expanded=True):
@@ -529,6 +540,11 @@ def main():
                         continue
 
                     if patterns_found:
+                        # Extract breakout price for Notion (use first found region)
+                        b_price = 0
+                        if regions_daily: b_price = regions_daily[0].get('breakout_price', 0)
+                        elif regions_weekly: b_price = regions_weekly[0].get('breakout_price', 0)
+
                         results.append({
                             'Symbol': symbol,
                             'Industry': industry,
@@ -536,6 +552,8 @@ def main():
                             'Patterns': ", ".join(patterns_found),
                             'ROE': row['ROE (%)'],
                             'ROCE': row['ROCE (%)'],
+                            'Current Price': row['Current Price'],
+                            'Breakout Price': b_price,
                             'df_daily': df_daily,
                             'df_weekly': df_weekly,
                             'regions_daily': regions_daily,
@@ -545,6 +563,25 @@ def main():
                     time.sleep(0.05)
 
                 status.update(label="Analysis complete!", state="complete", expanded=False)
+
+                # Sync to Notion if enabled
+                if enable_notion and notion_api_key and notion_db_id and results:
+                    st.info("Syncing results to Notion...")
+                    notion = NotionSync(notion_api_key, notion_db_id)
+                    notion_list = []
+                    for r in results:
+                        notion_list.append({
+                            'symbol': r['Symbol'],
+                            'patterns': r['Patterns'].split(',')[0], # Use main pattern
+                            'breakout_price': r['Breakout Price'],
+                            'current_price': r['Current Price']
+                        })
+
+                    try:
+                        count = notion.sync_stocks(notion_list)
+                        st.success(f"Successfully synced/updated {count} records in Notion!")
+                    except Exception as e:
+                        st.error(f"Notion sync failed: {e}")
 
             if not results:
                 st.warning("No stocks found matching both Fundamental and Technical criteria.")
