@@ -242,14 +242,18 @@ def main():
         if not notion_api_key or not notion_db_id:
             st.sidebar.error("Please provide both API Key and Database ID")
         else:
-            notion = NotionSync(notion_api_key, notion_db_id)
-            success, msg = notion.test_connection()
-            if success:
-                st.sidebar.success(msg)
-            else:
-                st.sidebar.error(msg)
-                if "404" in msg or "object_not_found" in msg:
-                    st.sidebar.warning("💡 **Tip:** Go to your Notion Database -> Options (...) -> Connect to -> Select your integration.")
+            with st.sidebar:
+                with st.spinner("Testing..."):
+                    notion = NotionSync(notion_api_key, notion_db_id)
+                    success, msg = notion.test_connection()
+                    if success:
+                        st.success(msg)
+                        if "stock" not in notion.prop_map or "price" not in notion.prop_map:
+                             st.warning("⚠️ 'Stock Name' or 'Breakout Price' columns not detected. Sync might fail.")
+                    else:
+                        st.error(msg)
+                        if "404" in msg or "Database not found" in msg:
+                            st.info("💡 **Tip:** Notion returned 404. Check your DB ID (32 chars) and ensure you have 'Connected' the Integration to the database in Notion.")
 
     # Top Filters
     with st.expander("🛠️ Global Filters & Settings", expanded=True):
