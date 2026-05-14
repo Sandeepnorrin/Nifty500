@@ -50,6 +50,7 @@ class NotionSync:
                 elif "broken" in low: mapping['broken'] = info
                 elif "15%" in low or "target" in low: mapping['target'] = info
                 elif "date" in low: mapping['date'] = info
+                elif "timeframe" in low: mapping['timeframe'] = info
 
             self.prop_map = mapping
             print(f"DEBUG: Property mapping result: {self.prop_map}")
@@ -145,6 +146,7 @@ class NotionSync:
         set_prop('broken', data['is_broken'])
         set_prop('target', data['is_target_met'])
         set_prop('date', datetime.now().strftime("%Y-%m-%d"))
+        set_prop('timeframe', data.get('timeframe', ''))
 
         payload = {
             "parent": {"database_id": self.database_id},

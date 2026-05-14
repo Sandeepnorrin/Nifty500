@@ -465,6 +465,9 @@ def main():
                     regions_daily = []
                     regions_weekly = []
 
+                    # Track which timeframe matched
+                    matched_timeframes = set()
+
                     # Pattern detection
                     strategies = [
                         ("Cup and Handle", is_cup_and_handle),
@@ -477,10 +480,14 @@ def main():
                             found_weekly = False
                             if timeframe_option in ["Daily", "Both"] and not df_daily.empty:
                                 found_daily, reg = p_func(df_daily)
-                                if found_daily: regions_daily.append(reg)
+                                if found_daily:
+                                    regions_daily.append(reg)
+                                    matched_timeframes.add("Daily")
                             if timeframe_option in ["Weekly", "Both"] and not df_weekly.empty:
                                 found_weekly, reg = p_func(df_weekly)
-                                if found_weekly: regions_weekly.append(reg)
+                                if found_weekly:
+                                    regions_weekly.append(reg)
+                                    matched_timeframes.add("Weekly")
                             if found_daily or found_weekly: patterns_found.append(p_name)
 
                     if "Tight Setup" in selected_patterns:
@@ -491,14 +498,18 @@ def main():
                             if sector_symbol not in sector_cache:
                                 sector_cache[sector_symbol] = get_sector_data(sector_symbol, interval="1d")
                             found_daily, reg = is_tight_setup(df_daily, sector_cache[sector_symbol])
-                            if found_daily: regions_daily.append(reg)
+                            if found_daily:
+                                regions_daily.append(reg)
+                                matched_timeframes.add("Daily")
 
                         if timeframe_option in ["Weekly", "Both"] and not df_weekly.empty:
                             sector_key_wk = sector_symbol + "_wk"
                             if sector_key_wk not in sector_cache:
                                 sector_cache[sector_key_wk] = get_sector_data(sector_symbol, interval="1wk")
                             found_weekly, reg = is_tight_setup(df_weekly, sector_cache[sector_key_wk])
-                            if found_weekly: regions_weekly.append(reg)
+                            if found_weekly:
+                                regions_weekly.append(reg)
+                                matched_timeframes.add("Weekly")
 
                         if found_daily or found_weekly:
                             patterns_found.append("Tight Setup")
@@ -562,11 +573,14 @@ def main():
                         if regions_daily: b_price = regions_daily[0].get('breakout_price', 0)
                         elif regions_weekly: b_price = regions_weekly[0].get('breakout_price', 0)
 
+                        tf_str = " & ".join(sorted(list(matched_timeframes)))
+
                         results.append({
                             'Symbol': symbol,
                             'Industry': industry,
                             'Category': row['Category'],
                             'Patterns': ", ".join(patterns_found),
+                            'Timeframe': tf_str,
                             'ROE': row['ROE (%)'],
                             'ROCE': row['ROCE (%)'],
                             'Current Price': row['Current Price'],
@@ -591,7 +605,8 @@ def main():
                             'symbol': r['Symbol'],
                             'patterns': r['Patterns'].split(',')[0], # Use main pattern
                             'breakout_price': r['Breakout Price'],
-                            'current_price': r['Current Price']
+                            'current_price': r['Current Price'],
+                            'timeframe': r['Timeframe']
                         })
 
                     try:
@@ -615,7 +630,8 @@ def main():
                     if cat_results:
                         st.header(f"Category: {cat} increased holding")
                         for res in cat_results:
-                            with st.expander(f"{res['Symbol']} - {res['Patterns']} (ROE: {res['ROE']}%, ROCE: {res['ROCE']}%)"):
+                            with st.expander(f"**{res['Symbol']}** | {res['Patterns']} | TF: {res['Timeframe']} | Breakout: {res['Breakout Price']} | CMP: {res['Current Price']}"):
+                                st.write(f"**Industry:** {res['Industry']} | **ROE:** {res['ROE']}% | **ROCE:** {res['ROCE']}% | **Institutional Category:** {res['Category']}")
                                 col1, col2 = st.columns(2)
                                 with col1:
                                     if not res['df_daily'].empty:
