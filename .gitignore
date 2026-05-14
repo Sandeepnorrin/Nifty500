@@ -3,3 +3,4 @@ __pycache__/
 *.log
 nifty500_fundamentals.csv
 nifty500_list.csv
+.env

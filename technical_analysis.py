@@ -182,10 +182,13 @@ def is_tight_setup(stock_df, sector_df):
 
     # Stock holding up check
     stock_close = stock_df['Close']
+    stock_high = stock_df['High']
     if isinstance(stock_close, pd.DataFrame):
         stock_close = stock_close.iloc[:, 0]
+    if isinstance(stock_high, pd.DataFrame):
+        stock_high = stock_high.iloc[:, 0]
 
-    stock_recent_high = stock_close.iloc[-5:].max()
+    stock_recent_high = stock_high.iloc[-5:].max()
     stock_current = stock_close.iloc[-1]
 
     # Within 3.5% of recent high (slightly relaxed from 3%)

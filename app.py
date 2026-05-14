@@ -8,6 +8,11 @@ from technical_analysis import calculate_ema, is_cup_and_handle, is_range_breako
 from sector_mapping import get_sector_index
 from notion_integration import NotionSync
 import time
+from dotenv import load_dotenv
+import os
+
+# Load environment variables from .env file
+load_dotenv()
 
 def create_chart(df, symbol, timeframe="Daily", regions=None):
     if df.empty:
@@ -230,12 +235,13 @@ def main():
 
     # Notion Settings in Sidebar
     st.sidebar.header("📝 Notion Settings")
-    # API key is intentionally not hardcoded for security.
-    # User can enter it in the UI or set it as an environment variable NOTION_API_KEY
-    import os
+
+    # Load defaults from environment variables
     default_key = os.environ.get("NOTION_API_KEY", "")
+    default_db_id = os.environ.get("NOTION_DATABASE_ID", "360f8ac4f6cb8065bbc1e38a22eda951")
+
     notion_api_key = st.sidebar.text_input("Notion API Key", value=default_key, type="password")
-    notion_db_id = st.sidebar.text_input("Notion Database ID", value="360f8ac4f6cb8065bbc1e38a22eda951")
+    notion_db_id = st.sidebar.text_input("Notion Database ID", value=default_db_id)
     enable_notion = st.sidebar.checkbox("Enable Notion Sync", value=True)
 
     if st.sidebar.button("🔌 Test Notion Connection"):
