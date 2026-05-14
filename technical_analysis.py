@@ -200,7 +200,9 @@ def is_tight_setup(stock_df, sector_df):
         region = {
             'start': stock_df.index[-5],
             'end': stock_df.index[-1],
-            'label': 'Tight Setup'
+            'label': 'Tight Setup',
+            'status': 'Verge', # Tight setup is generally a consolidation/verge pattern
+            'breakout_price': float(stock_recent_high)
         }
         return True, region
 

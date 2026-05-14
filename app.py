@@ -511,7 +511,8 @@ def main():
                                 regions_weekly.append(reg)
                                 matched_timeframes.add("Weekly")
 
-                        if found_daily or found_weekly:
+                        if (timeframe_option in ["Daily", "Both"] and found_daily) or \
+                           (timeframe_option in ["Weekly", "Both"] and found_weekly):
                             patterns_found.append("Tight Setup")
 
                     # Final filtering based on breakout mode
@@ -542,25 +543,29 @@ def main():
                         valid_regions_daily = []
                         valid_regions_weekly = []
 
-                        for r in regions_daily + regions_weekly:
-                            # Apply distance filter for broken stocks
+                        for r in regions_daily:
                             if r.get('status') == 'Broken':
                                 b_price = r.get('breakout_price')
                                 current_p = df_daily['Close'].iloc[-1] if not df_daily.empty else 0
-                                if b_price and b_price > 0:
+                                if b_price and b_price > 0 and current_p > 0:
                                     pct_dist = (current_p - b_price) / b_price * 100
-                                    if pct_dist > dist_filter:
-                                        continue
-
+                                    if pct_dist > dist_filter: continue
                             current_patterns.add(r['label'].replace(' (Verge)', '').replace(' & Handle', ' and Handle'))
-                            if r in regions_daily: valid_regions_daily.append(r)
-                            if r in regions_weekly: valid_regions_weekly.append(r)
+                            valid_regions_daily.append(r)
+
+                        for r in regions_weekly:
+                            if r.get('status') == 'Broken':
+                                b_price = r.get('breakout_price')
+                                current_p = df_weekly['Close'].iloc[-1] if not df_weekly.empty else 0
+                                if b_price and b_price > 0 and current_p > 0:
+                                    pct_dist = (current_p - b_price) / b_price * 100
+                                    if pct_dist > dist_filter: continue
+                            current_patterns.add(r['label'].replace(' (Verge)', '').replace(' & Handle', ' and Handle'))
+                            valid_regions_weekly.append(r)
+
 
                         regions_daily = valid_regions_daily
                         regions_weekly = valid_regions_weekly
-
-                        if "Tight Setup" in patterns_found:
-                            current_patterns.add("Tight Setup")
 
                         patterns_found = list(current_patterns)
 
@@ -568,10 +573,12 @@ def main():
                         continue
 
                     if patterns_found:
-                        # Extract breakout price for Notion (use first found region)
+                        # Extract breakout price for Notion (use first found region that has a breakout price)
                         b_price = 0
-                        if regions_daily: b_price = regions_daily[0].get('breakout_price', 0)
-                        elif regions_weekly: b_price = regions_weekly[0].get('breakout_price', 0)
+                        for r in regions_daily + regions_weekly:
+                            if r.get('breakout_price', 0) > 0:
+                                b_price = r.get('breakout_price')
+                                break
 
                         tf_str = " & ".join(sorted(list(matched_timeframes)))
 
@@ -610,8 +617,11 @@ def main():
                         })
 
                     try:
-                        count = notion.sync_stocks(notion_list)
-                        st.success(f"Successfully synced/updated {count} records in Notion!")
+                        created, updated = notion.sync_stocks(notion_list)
+                        if created > 0 or updated > 0:
+                            st.success(f"Notion Sync Complete: {created} records created, {updated} records updated.")
+                        else:
+                            st.info("Notion Sync: No new or updated records.")
                     except Exception as e:
                         error_msg = str(e)
                         st.error(f"Notion sync failed: {error_msg}")

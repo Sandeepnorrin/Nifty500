@@ -206,12 +206,14 @@ class NotionSync:
         """
         Main entry point to sync a list of stocks to Notion.
         stocks_list: list of dicts with keys: symbol, patterns, breakout_price, current_price
+        Returns: (created_count, updated_count)
         """
         if not stocks_list:
             print("DEBUG: No stocks to sync.")
-            return 0
+            return 0, 0
 
-        success_count = 0
+        created_count = 0
+        updated_count = 0
         for stock in stocks_list:
             print(f"DEBUG: Processing sync for {stock['symbol']}")
             # Basic validation
@@ -225,11 +227,16 @@ class NotionSync:
             stock['is_broken'] = is_broken
             stock['is_target_met'] = is_target_met
 
-            existing = self.query_stock(stock['symbol'], stock['breakout_price'])
-            if existing:
-                if self.update_record(existing['id'], stock):
-                    success_count += 1
-            else:
-                if self.create_record(stock):
-                    success_count += 1
-        return success_count
+            try:
+                existing = self.query_stock(stock['symbol'], stock['breakout_price'])
+                if existing:
+                    if self.update_record(existing['id'], stock):
+                        updated_count += 1
+                else:
+                    if self.create_record(stock):
+                        created_count += 1
+            except Exception as e:
+                print(f"ERROR: Sync failed for {stock['symbol']}: {str(e)}")
+                # We continue with other stocks
+
+        return created_count, updated_count
