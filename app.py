@@ -291,7 +291,6 @@ def main():
             fetch_and_save_fundamentals()
             st.rerun()
         if col_btn2.button("Full Refresh"):
-            import os
             if os.path.exists(FUNDAMENTALS_FILE):
                 os.remove(FUNDAMENTALS_FILE)
             fetch_and_save_fundamentals()
