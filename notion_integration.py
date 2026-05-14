@@ -11,23 +11,56 @@ class NotionSync:
             "Content-Type": "application/json",
             "Notion-Version": "2022-06-28"
         }
+        self.prop_map = {}
+
+    def _get_property_names(self):
+        """
+        Fetches database metadata to map internal keys to actual property names.
+        """
+        url = f"https://api.notion.com/v1/databases/{self.database_id}"
+        response = requests.get(url, headers=self.headers)
+        if response.status_code == 200:
+            props = response.json().get("properties", {})
+            names = list(props.keys())
+
+            # Map based on best match
+            mapping = {}
+            for n in names:
+                low = n.lower().strip()
+                if "stock" in low: mapping['stock'] = n
+                elif "breakout" in low and "type" in low: mapping['type'] = n
+                elif "breakout" in low and "price" in low: mapping['price'] = n
+                elif "cmp" in low or ("current" in low and "price" in low): mapping['cmp'] = n
+                elif "broken" in low: mapping['broken'] = n
+                elif "15%" in low or "target" in low: mapping['target'] = n
+                elif "date" in low: mapping['date'] = n
+
+            self.prop_map = mapping
+            return True
+        return False
 
     def query_stock(self, stock_name, breakout_price):
         """
         Queries the database for an existing record with the same stock name and breakout price.
         """
+        if not self.prop_map:
+            self._get_property_names()
+
+        stock_prop = self.prop_map.get('stock', 'Stock name')
+        price_prop = self.prop_map.get('price', 'Breakout Price')
+
         url = f"https://api.notion.com/v1/databases/{self.database_id}/query"
         filter_data = {
             "filter": {
                 "and": [
                     {
-                        "property": "Stock name",
+                        "property": stock_prop,
                         "title": {
                             "equals": stock_name
                         }
                     },
                     {
-                        "property": "Breakout Price",
+                        "property": price_prop,
                         "number": {
                             "equals": float(breakout_price)
                         }
@@ -50,17 +83,19 @@ class NotionSync:
         Creates a new record in the Notion database.
         data: dict containing stock info
         """
+        if not self.prop_map:
+            self._get_property_names()
+
         url = "https://api.notion.com/v1/pages"
 
-        properties = {
-            "Stock name": {"title": [{"text": {"content": data['symbol']}}]},
-            "Breakout Type": {"select": {"name": data['patterns']}},
-            "Breakout Price": {"number": float(data['breakout_price'])},
-            "CMP": {"number": float(data['current_price'])},
-            "Broken out ?": {"checkbox": data['is_broken']},
-            "15% Target achieved": {"checkbox": data['is_target_met']},
-            "Notion entry date": {"date": {"start": datetime.now().strftime("%Y-%m-%d")}}
-        }
+        properties = {}
+        if 'stock' in self.prop_map: properties[self.prop_map['stock']] = {"title": [{"text": {"content": data['symbol']}}]}
+        if 'type' in self.prop_map: properties[self.prop_map['type']] = {"select": {"name": data['patterns']}}
+        if 'price' in self.prop_map: properties[self.prop_map['price']] = {"number": float(data['breakout_price'])}
+        if 'cmp' in self.prop_map: properties[self.prop_map['cmp']] = {"number": float(data['current_price'])}
+        if 'broken' in self.prop_map: properties[self.prop_map['broken']] = {"checkbox": data['is_broken']}
+        if 'target' in self.prop_map: properties[self.prop_map['target']] = {"checkbox": data['is_target_met']}
+        if 'date' in self.prop_map: properties[self.prop_map['date']] = {"date": {"start": datetime.now().strftime("%Y-%m-%d")}}
 
         payload = {
             "parent": {"database_id": self.database_id},
@@ -76,13 +111,15 @@ class NotionSync:
         """
         Updates an existing record in Notion.
         """
+        if not self.prop_map:
+            self._get_property_names()
+
         url = f"https://api.notion.com/v1/pages/{page_id}"
 
-        properties = {
-            "CMP": {"number": float(data['current_price'])},
-            "Broken out ?": {"checkbox": data['is_broken']},
-            "15% Target achieved": {"checkbox": data['is_target_met']}
-        }
+        properties = {}
+        if 'cmp' in self.prop_map: properties[self.prop_map['cmp']] = {"number": float(data['current_price'])}
+        if 'broken' in self.prop_map: properties[self.prop_map['broken']] = {"checkbox": data['is_broken']}
+        if 'target' in self.prop_map: properties[self.prop_map['target']] = {"checkbox": data['is_target_met']}
 
         payload = {"properties": properties}
         response = requests.patch(url, headers=self.headers, json=payload)
@@ -92,12 +129,14 @@ class NotionSync:
 
     def test_connection(self):
         """
-        Tests the connection by retrieving database metadata.
+        Tests the connection and reports on mapped columns.
         """
         url = f"https://api.notion.com/v1/databases/{self.database_id}"
         response = requests.get(url, headers=self.headers)
         if response.status_code == 200:
-            return True, "Connection Successful!"
+            self._get_property_names()
+            found = list(self.prop_map.values())
+            return True, f"Connection Successful! Found columns: {', '.join(found)}"
         else:
             return False, f"Connection Failed: {response.text}"
 
