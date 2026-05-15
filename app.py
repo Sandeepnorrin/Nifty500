@@ -615,7 +615,7 @@ def main():
                     for r in results:
                         notion_list.append({
                             'symbol': r['Symbol'],
-                            'patterns': r['Patterns'].split(',')[0], # Use main pattern
+                            'patterns': r['Patterns'], # Send all patterns found
                             'breakout_price': r['Breakout Price'],
                             'current_price': r['Current Price'],
                             'timeframe': r['Timeframe']

@@ -43,14 +43,14 @@ class NotionSync:
 
                 info = {'name': n, 'type': p_type}
 
-                if "stock" in low: mapping['stock'] = info
-                elif "breakout" in low and "type" in low: mapping['type'] = info
+                if "stock" in low or "symbol" in low: mapping['stock'] = info
+                elif "breakout" in low and ("pattern" in low or "type" in low or "strategy" in low): mapping['type'] = info
                 elif "breakout" in low and "price" in low: mapping['price'] = info
-                elif "cmp" in low or ("current" in low and "price" in low): mapping['cmp'] = info
-                elif "broken" in low: mapping['broken'] = info
-                elif "15%" in low or "target" in low: mapping['target'] = info
+                elif "cmp" in low or "current" in low: mapping['cmp'] = info
+                elif "broken" in low or "triggered" in low or "status" in low: mapping['broken'] = info
+                elif "15%" in low or "target" in low or "met" in low or "achieved" in low: mapping['target'] = info
                 elif "date" in low: mapping['date'] = info
-                elif "timeframe" in low: mapping['timeframe'] = info
+                elif "timeframe" in low or "interval" in low: mapping['timeframe'] = info
 
             self.prop_map = mapping
             print(f"DEBUG: Property mapping result: {self.prop_map}")
@@ -86,6 +86,11 @@ class NotionSync:
         if stock_info['type'] == 'rich_text':
              stock_filter = {"rich_text": {"equals": stock_name}}
 
+        # Determine filter type for price (usually number)
+        price_filter = {"number": {"equals": round(float(breakout_price), 2)}}
+        if price_info['type'] == 'rich_text':
+            price_filter = {"rich_text": {"equals": str(round(float(breakout_price), 2))}}
+
         filter_data = {
             "filter": {
                 "and": [
@@ -95,9 +100,7 @@ class NotionSync:
                     },
                     {
                         "property": price_info['name'],
-                        "number": {
-                            "equals": round(float(breakout_price), 2)
-                        }
+                        **price_filter
                     }
                 ]
             }
@@ -114,16 +117,10 @@ class NotionSync:
             print(f"DEBUG: Error querying Notion: Status {response.status_code}, Body: {error_text}")
             raise Exception(f"Notion API Error (Status {response.status_code}): {error_text}")
 
-    def create_record(self, data):
+    def _prepare_properties(self, data, is_update=False):
         """
-        Creates a new record in the Notion database.
-        data: dict containing stock info
+        Helper to prepare Notion properties based on data and mapping.
         """
-        if not self.prop_map:
-            self._get_property_names()
-
-        url = "https://api.notion.com/v1/pages"
-
         properties = {}
 
         def set_prop(key, value):
@@ -132,28 +129,61 @@ class NotionSync:
             name = info['name']
             p_type = info['type']
 
-            if p_type == 'title': properties[name] = {"title": [{"text": {"content": str(value)}}]}
-            elif p_type == 'rich_text': properties[name] = {"rich_text": [{"text": {"content": str(value)}}]}
-            elif p_type == 'number': properties[name] = {"number": round(float(value), 2)}
-            elif p_type == 'select': properties[name] = {"select": {"name": str(value)[:100]}}
-            elif p_type == 'checkbox': properties[name] = {"checkbox": bool(value)}
-            elif p_type == 'date': properties[name] = {"date": {"start": value}}
+            # Formatting values for specific types
+            if p_type == 'title':
+                properties[name] = {"title": [{"text": {"content": str(value)}}]}
+            elif p_type == 'rich_text':
+                properties[name] = {"rich_text": [{"text": {"content": str(value)}}]}
+            elif p_type == 'number':
+                properties[name] = {"number": round(float(value), 2)}
+            elif p_type == 'select':
+                # Convert bool to Yes/No if it's a select field
+                if isinstance(value, bool):
+                    val_str = "Yes" if value else "No"
+                else:
+                    val_str = str(value)[:100]
+                properties[name] = {"select": {"name": val_str}}
+            elif p_type == 'status':
+                # Notion Status type
+                if isinstance(value, bool):
+                    val_str = "Done" if value else "In progress"
+                else:
+                    val_str = str(value)
+                properties[name] = {"status": {"name": val_str}}
+            elif p_type == 'checkbox':
+                properties[name] = {"checkbox": bool(value)}
+            elif p_type == 'date':
+                properties[name] = {"date": {"start": value}}
 
-        set_prop('stock', data['symbol'])
+        if not is_update:
+            set_prop('stock', data['symbol'])
+            set_prop('price', data['breakout_price'])
+            set_prop('date', datetime.now().strftime("%Y-%m-%d"))
+
         set_prop('type', data['patterns'])
-        set_prop('price', data['breakout_price'])
         set_prop('cmp', data['current_price'])
         set_prop('broken', data['is_broken'])
         set_prop('target', data['is_target_met'])
-        set_prop('date', datetime.now().strftime("%Y-%m-%d"))
         set_prop('timeframe', data.get('timeframe', ''))
+
+        return properties
+
+    def create_record(self, data):
+        """
+        Creates a new record in the Notion database.
+        """
+        if not self.prop_map:
+            self._get_property_names()
+
+        url = "https://api.notion.com/v1/pages"
+        properties = self._prepare_properties(data, is_update=False)
 
         payload = {
             "parent": {"database_id": self.database_id},
             "properties": properties
         }
 
-        print(f"DEBUG: Creating record for {data['symbol']}")
+        print(f"DEBUG: Creating record for {data['symbol']} with props: {list(properties.keys())}")
         response = requests.post(url, headers=self.headers, json=payload)
         if response.status_code != 200:
              print(f"DEBUG: Create Error. Status: {response.status_code}, Body: {response.text}")
@@ -169,26 +199,15 @@ class NotionSync:
             self._get_property_names()
 
         url = f"https://api.notion.com/v1/pages/{page_id}"
-
-        properties = {}
-
-        def set_prop(key, value):
-            if key not in self.prop_map: return
-            info = self.prop_map[key]
-            name = info['name']
-            p_type = info['type']
-
-            if p_type == 'number': properties[name] = {"number": round(float(value), 2)}
-            elif p_type == 'checkbox': properties[name] = {"checkbox": bool(value)}
-
-        set_prop('cmp', data['current_price'])
-        set_prop('broken', data['is_broken'])
-        set_prop('target', data['is_target_met'])
+        properties = self._prepare_properties(data, is_update=True)
 
         payload = {"properties": properties}
+        print(f"DEBUG: Updating record {page_id} for {data['symbol']} with props: {list(properties.keys())}")
         response = requests.patch(url, headers=self.headers, json=payload)
         if response.status_code != 200:
+             print(f"DEBUG: Update Error. Status: {response.status_code}, Body: {response.text}")
              raise Exception(f"Notion Update Error: {response.text}")
+        print(f"DEBUG: Successfully updated record for {data['symbol']}")
         return True
 
     def test_connection(self):
