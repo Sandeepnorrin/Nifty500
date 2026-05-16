@@ -66,8 +66,17 @@ def is_cup_and_handle(df):
     current_price = close_prices.iloc[-1]
     left_high = prices[left_high_idx]
 
+    # Volume check for breakout
+    volumes = df['Volume']
+    if isinstance(volumes, pd.DataFrame): volumes = volumes.iloc[:, 0]
+    avg_volume = volumes.tail(20).mean()
+    curr_volume = volumes.iloc[-1]
+
     # Check if broken or on verge
     if current_price > left_high:
+        # For broken, we need volume spike
+        if curr_volume < avg_volume:
+            return False, {}
         status = 'Broken'
         label = 'Cup and Handle'
     elif current_price >= left_high * 0.98:
@@ -131,6 +140,16 @@ def is_range_breakout(df):
         # 4. Breakout check: any price in last 'recent_lookback' sessions breaks the peak price
         recent_prices = close_prices.tail(recent_lookback)
         if (recent_prices > peak_price).any():
+            # Volume check for range breakout
+            volumes = df['Volume']
+            if isinstance(volumes, pd.DataFrame): volumes = volumes.iloc[:, 0]
+            avg_volume = volumes.tail(20).mean()
+
+            # Check if volume was above average during the breakout sessions
+            recent_vols = volumes.tail(recent_lookback)
+            if not (recent_vols > avg_volume).any():
+                continue
+
             region = {
                 'start': df.index[peak_idx_abs],
                 'end': df.index[-1],
@@ -199,7 +218,16 @@ def is_tight_setup(stock_df, sector_df):
     else:
         found = diff_pct < 0.035
 
-    if found:
+    # Volume check: Tight setup should have near average or lower volume (not a huge spike or dry)
+    volumes = stock_df['Volume']
+    if isinstance(volumes, pd.DataFrame): volumes = volumes.iloc[:, 0]
+    avg_volume = volumes.tail(20).mean()
+    curr_volume = volumes.iloc[-1]
+
+    # "Near average" defined as between 0.5x and 1.5x
+    is_volume_tight = (curr_volume >= avg_volume * 0.5) and (curr_volume <= avg_volume * 1.5)
+
+    if found and is_volume_tight:
         region = {
             'start': stock_df.index[-5],
             'end': stock_df.index[-1],
