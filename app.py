@@ -681,7 +681,11 @@ def main():
                     all_nse['ListingDate'] = pd.to_datetime(all_nse['DATE OF LISTING'])
 
                 eighteen_months_ago = pd.Timestamp.now() - pd.DateOffset(months=18)
-                recent_ipos = all_nse[all_nse['ListingDate'] >= eighteen_months_ago]
+                # Filter for mainboard: Market Lot is 1 and Symbol doesn't suggest SME (though lot is better indicator)
+                recent_ipos = all_nse[
+                    (all_nse['ListingDate'] >= eighteen_months_ago) &
+                    (all_nse['MARKET LOT'] == 1)
+                ]
 
                 ipo_results = []
                 progress_bar_ipo = st.progress(0)
