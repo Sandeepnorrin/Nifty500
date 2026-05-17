@@ -7,6 +7,24 @@ import time
 import os
 
 NIFTY500_LIST_FILE = "nifty500_list.csv"
+NSE_ALL_LIST_FILE = "nse_all_stocks.csv"
+
+def get_all_nse_stocks(refresh=False):
+    if not refresh and os.path.exists(NSE_ALL_LIST_FILE):
+        return pd.read_csv(NSE_ALL_LIST_FILE)
+
+    url = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
+    try:
+        df = pd.read_csv(url)
+        # Clean up column names
+        df.columns = [c.strip() for c in df.columns]
+        df.to_csv(NSE_ALL_LIST_FILE, index=False)
+        return df
+    except Exception as e:
+        print(f"Error fetching NSE all stocks list: {e}")
+        if os.path.exists(NSE_ALL_LIST_FILE):
+            return pd.read_csv(NSE_ALL_LIST_FILE)
+        return pd.DataFrame()
 
 def get_nifty500_stocks(refresh=False):
     if not refresh and os.path.exists(NIFTY500_LIST_FILE):

@@ -317,66 +317,68 @@ def is_52w_high_breakout(df):
 
 def is_ipo_breakout(df):
     """
-    IPO Breakout Pattern:
+    IPO Breakout Pattern (Shadowfax Style):
     - Identifies stocks breaking out of their All-Time High (ATH).
-    - Usually after a consolidation period since listing.
-    - Confirmation by above-average volume.
+    - Verge: Tight consolidation (low volatility) near ATH with volume dry-up.
+    - Breakout: Price cross ATH with volume confirmation.
     """
-    if len(df) < 10: return False, {}
+    if len(df) < 15: return False, {}
 
     close_prices = df['Close']
     high_prices = df['High']
+    low_prices = df['Low']
     volumes = df['Volume']
 
-    if isinstance(close_prices, pd.Series):
-        pass
-    elif isinstance(close_prices, pd.DataFrame):
+    if isinstance(close_prices, pd.DataFrame):
         close_prices = close_prices.iloc[:, 0]
         high_prices = high_prices.iloc[:, 0]
+        low_prices = low_prices.iloc[:, 0]
         volumes = volumes.iloc[:, 0]
 
-    # Use a small window for the current "breakout" attempt
+    # All-time high up to 3 days ago
     breakout_window = 3
-    if len(df) <= breakout_window: return False, {}
-
-    # All-time high BEFORE the current breakout window
     historic_ath = high_prices.iloc[:-breakout_window].max()
 
     current_price = close_prices.iloc[-1]
     avg_volume = volumes.tail(20).mean()
     current_volume = volumes.iloc[-1]
 
-    # Breakout criteria
-    is_breakout = current_price > historic_ath
-    is_good_volume = current_volume > avg_volume
+    # Consolidation characteristics (last 10 days excluding breakout window)
+    consol_period = close_prices.iloc[-10-breakout_window : -breakout_window]
+    if len(consol_period) < 5: return False, {}
 
-    # Consolidation check: Price should have spent at least 5 days below ATH
-    # before breaking out (prevents just a straight line up)
-    prices_below_ath = (high_prices.iloc[:-breakout_window] <= historic_ath).all()
-    # Actually historic_ath IS the max of that period, so it's always true.
-    # Let's check if it was consolidating (e.g., within 25% of ATH)
-    low_in_period = close_prices.iloc[:-breakout_window].min()
-    was_consolidating = (historic_ath - low_in_period) / historic_ath < 0.30
+    # 1. Volatility check: High and Low in consolidation should be tight
+    consol_high = high_prices.iloc[-10-breakout_window : -breakout_window].max()
+    consol_low = low_prices.iloc[-10-breakout_window : -breakout_window].min()
+    consol_range_pct = (consol_high - consol_low) / consol_high
 
-    if is_breakout and is_good_volume and was_consolidating:
-        region = {
-            'start': df.index[0], # From listing
+    # 2. Volume dry-up: Avg volume in consolidation should be lower than previous avg
+    prior_avg_vol = volumes.iloc[:-10-breakout_window].tail(30).mean()
+    consol_avg_vol = volumes.iloc[-10-breakout_window : -breakout_window].mean()
+
+    # Shadowsax style usually has a "VCP" like tightening
+    is_tight = consol_range_pct < 0.15 # 15% range is relatively tight for IPOs
+    volume_dry_up = consol_avg_vol < prior_avg_vol * 1.2 # Not strictly a "dry up" but not a spike
+
+    # Breakout check
+    if current_price > historic_ath and current_volume > avg_volume:
+        return True, {
+            'start': df.index[-10-breakout_window],
             'end': df.index[-1],
             'label': 'IPO ATH Breakout',
             'status': 'Broken',
             'breakout_price': float(historic_ath)
         }
-        return True, region
 
-    # Verge check
-    if current_price >= historic_ath * 0.97 and current_price <= historic_ath and was_consolidating:
-        region = {
-            'start': df.index[0],
-            'end': df.index[-1],
-            'label': 'IPO ATH (Verge)',
-            'status': 'Verge',
-            'breakout_price': float(historic_ath)
-        }
-        return True, region
+    # Verge check: Within 3% of ATH and showing tightness
+    if current_price >= historic_ath * 0.97 and current_price <= historic_ath * 1.02:
+        if is_tight and volume_dry_up:
+            return True, {
+                'start': df.index[-10-breakout_window],
+                'end': df.index[-1],
+                'label': 'IPO ATH (Verge)',
+                'status': 'Verge',
+                'breakout_price': float(historic_ath)
+            }
 
     return False, {}
