@@ -4,7 +4,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from data_fetcher import get_nifty500_stocks, get_stock_fundamentals, get_price_data, get_sector_data
 from fundamental_analysis import filter_fundamentals, get_holding_category
-from technical_analysis import calculate_ema, is_cup_and_handle, is_range_breakout, is_tight_setup, is_ema_aligned, is_52w_high_breakout
+from technical_analysis import (calculate_ema, is_cup_and_handle, is_range_breakout,
+                                is_tight_setup, is_ema_aligned, is_52w_high_breakout, is_ipo_breakout)
 from sector_mapping import get_sector_index
 from notion_integration import NotionSync
 import time
@@ -324,7 +325,7 @@ def main():
         filtered_df = filtered_df[filtered_df['Category'] != "None"]
 
     # Tabs for different views
-    tab1, tab2, tab3 = st.tabs(["📊 Data Table", "🔍 Technical Scanner", "📈 Stock Research"])
+    tab1, tab2, tab_ipo, tab3 = st.tabs(["📊 Data Table", "🔍 Technical Scanner", "🚀 Recent IPOs", "📈 Stock Research"])
 
     with tab1:
         st.subheader("Nifty 500 Fundamental Overview")
@@ -383,8 +384,9 @@ def main():
         if search_symbol:
             st.subheader(f"Search Result: {search_symbol}")
             with st.spinner(f"Fetching data for {search_symbol}..."):
-                df_daily = get_price_data(search_symbol, period="3y", interval="1d")
-                df_weekly = get_price_data(search_symbol, period="3y", interval="1wk")
+                # Use longer period to capture listing for older IPOs if needed
+                df_daily = get_price_data(search_symbol, period="max", interval="1d")
+                df_weekly = get_price_data(search_symbol, period="max", interval="1wk")
 
                 if not df_daily.empty:
                     df_daily = calculate_ema(df_daily)
@@ -398,7 +400,8 @@ def main():
                     strategies_search = [
                         ("Cup and Handle", is_cup_and_handle),
                         ("Range Breakout", is_range_breakout),
-                        ("52W High Breakout", is_52w_high_breakout)
+                        ("52W High Breakout", is_52w_high_breakout),
+                        ("IPO Breakout", is_ipo_breakout)
                     ]
                     for p_name, p_func in strategies_search:
                         f_d, r_d = p_func(df_daily)
@@ -660,6 +663,93 @@ def main():
                                         if chart_weekly: st.plotly_chart(chart_weekly, width="stretch")
                                     else:
                                         st.write("Weekly chart not available (filtered out)")
+
+    with tab_ipo:
+        st.subheader("Recent IPO Breakouts (Last 18 Months)")
+        st.info("Scanning for stocks listed within the last 18 months that are breaking out of their All-Time High with volume confirmation.")
+
+        if st.button("Scan Recent IPOs"):
+            with st.status("Searching for recent IPOs and analyzing patterns...", expanded=True) as status:
+                nifty500 = get_nifty500_stocks()
+                ipo_results = []
+
+                # We'll use a subset of the filtered_df or all nifty500
+                # Requirements said "all the stocks of nifty 500" for the main task
+                # but no need for fundamental filters for IPO tab, but need to see them.
+
+                # Determine "18 months ago" date
+                eighteen_months_ago = pd.Timestamp.now() - pd.DateOffset(months=18)
+
+                progress_bar_ipo = st.progress(0)
+                total_ipo = len(nifty500)
+
+                for idx, (idx_ns, row) in enumerate(nifty500.iterrows()):
+                    symbol = row['Symbol']
+                    progress_bar_ipo.progress((idx + 1) / total_ipo, text=f"Checking {symbol} ({idx+1}/{total_ipo})")
+
+                    # Fetch price data to determine listing date
+                    # We only need enough to see if it's > 18 months old
+                    df_ipo = get_price_data(symbol, period="2y", interval="1d")
+
+                    if df_ipo.empty: continue
+
+                    listing_date = df_ipo.index[0]
+
+                    # Check if listing date is within last 18 months
+                    if listing_date >= eighteen_months_ago:
+                        # This is a recent IPO! Now check for ATH breakout
+                        found, region = is_ipo_breakout(df_ipo)
+
+                        if found:
+                            # Also check breakout status filter if applicable
+                            if breakout_mode == "Already Broken" and region['status'] != "Broken": continue
+                            if breakout_mode == "On the Verge" and region['status'] != "Verge": continue
+
+                            # Get fundamentals for display
+                            funds = get_stock_fundamentals(symbol)
+
+                            # Get weekly data for chart
+                            df_ipo_wk = get_price_data(symbol, period="2y", interval="1wk")
+
+                            ipo_results.append({
+                                'Symbol': symbol,
+                                'Industry': row['Industry'],
+                                'Listing Date': listing_date.strftime('%Y-%m-%d'),
+                                'Pattern': region['label'],
+                                'Status': region['status'],
+                                'Breakout Price': region['breakout_price'],
+                                'Current Price': df_ipo['Close'].iloc[-1],
+                                'ROE': funds.get('ROE') if funds else "N/A",
+                                'ROCE': funds.get('ROCE') if funds else "N/A",
+                                'df_daily': df_ipo,
+                                'df_weekly': df_ipo_wk,
+                                'region': region
+                            })
+
+                    # Be nice to the API
+                    time.sleep(0.05)
+
+                status.update(label="IPO Scan complete!", state="complete", expanded=False)
+
+            if not ipo_results:
+                st.warning("No recent IPOs (last 18 months) found with ATH breakout patterns.")
+            else:
+                st.success(f"Found {len(ipo_results)} Recent IPO Breakouts!")
+                for res in ipo_results:
+                    with st.expander(f"**{res['Symbol']}** | {res['Pattern']} | Listed: {res['Listing Date']} | CMP: {res['Current Price']:.2f}"):
+                        st.write(f"**Industry:** {res['Industry']} | **ROE:** {res['ROE']}% | **ROCE:** {res['ROCE']}%")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            # Calculate EMAs for chart
+                            df_d = calculate_ema(res['df_daily'])
+                            fig_d = create_chart(df_d, res['Symbol'], "Daily", regions=[res['region']])
+                            if fig_d: st.plotly_chart(fig_d, use_container_width=True)
+                        with col2:
+                            df_w = calculate_ema(res['df_weekly'])
+                            # Note: region might be based on daily indices, so might not highlight perfectly on weekly
+                            # but we'll show the weekly chart for context
+                            fig_w = create_chart(df_w, res['Symbol'], "Weekly")
+                            if fig_w: st.plotly_chart(fig_w, use_container_width=True)
 
 if __name__ == "__main__":
     main()

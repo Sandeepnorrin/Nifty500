@@ -314,3 +314,69 @@ def is_52w_high_breakout(df):
         return True, region
 
     return False, {}
+
+def is_ipo_breakout(df):
+    """
+    IPO Breakout Pattern:
+    - Identifies stocks breaking out of their All-Time High (ATH).
+    - Usually after a consolidation period since listing.
+    - Confirmation by above-average volume.
+    """
+    if len(df) < 10: return False, {}
+
+    close_prices = df['Close']
+    high_prices = df['High']
+    volumes = df['Volume']
+
+    if isinstance(close_prices, pd.Series):
+        pass
+    elif isinstance(close_prices, pd.DataFrame):
+        close_prices = close_prices.iloc[:, 0]
+        high_prices = high_prices.iloc[:, 0]
+        volumes = volumes.iloc[:, 0]
+
+    # Use a small window for the current "breakout" attempt
+    breakout_window = 3
+    if len(df) <= breakout_window: return False, {}
+
+    # All-time high BEFORE the current breakout window
+    historic_ath = high_prices.iloc[:-breakout_window].max()
+
+    current_price = close_prices.iloc[-1]
+    avg_volume = volumes.tail(20).mean()
+    current_volume = volumes.iloc[-1]
+
+    # Breakout criteria
+    is_breakout = current_price > historic_ath
+    is_good_volume = current_volume > avg_volume
+
+    # Consolidation check: Price should have spent at least 5 days below ATH
+    # before breaking out (prevents just a straight line up)
+    prices_below_ath = (high_prices.iloc[:-breakout_window] <= historic_ath).all()
+    # Actually historic_ath IS the max of that period, so it's always true.
+    # Let's check if it was consolidating (e.g., within 25% of ATH)
+    low_in_period = close_prices.iloc[:-breakout_window].min()
+    was_consolidating = (historic_ath - low_in_period) / historic_ath < 0.30
+
+    if is_breakout and is_good_volume and was_consolidating:
+        region = {
+            'start': df.index[0], # From listing
+            'end': df.index[-1],
+            'label': 'IPO ATH Breakout',
+            'status': 'Broken',
+            'breakout_price': float(historic_ath)
+        }
+        return True, region
+
+    # Verge check
+    if current_price >= historic_ath * 0.97 and current_price <= historic_ath and was_consolidating:
+        region = {
+            'start': df.index[0],
+            'end': df.index[-1],
+            'label': 'IPO ATH (Verge)',
+            'status': 'Verge',
+            'breakout_price': float(historic_ath)
+        }
+        return True, region
+
+    return False, {}
