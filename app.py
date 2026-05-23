@@ -5,7 +5,8 @@ from plotly.subplots import make_subplots
 from data_fetcher import get_nifty500_stocks, get_all_nse_stocks, get_stock_fundamentals, get_price_data, get_sector_data
 from fundamental_analysis import filter_fundamentals, get_holding_category
 from technical_analysis import (calculate_ema, is_cup_and_handle, is_range_breakout,
-                                is_tight_setup, is_ema_aligned, is_52w_high_breakout, is_ipo_breakout)
+                                is_tight_setup, is_ema_aligned, is_52w_high_breakout, is_ipo_breakout,
+                                is_double_bottom)
 from sector_mapping import get_sector_index
 from notion_integration import NotionSync
 import time
@@ -279,7 +280,7 @@ def main():
             high_filter = st.slider("Max % Away from 52W High", 0, 100, 20)
             change_options = ["<= 1.5%", "1.5% - 3%", "3% - 7%", "7% - 10%", "> 10%"]
             selected_change = st.multiselect("Combined Holding Change", change_options, default=change_options)
-            pattern_options = ["Cup and Handle", "Range Breakout", "Tight Setup", "52W High Breakout"]
+            pattern_options = ["Cup and Handle", "Range Breakout", "Tight Setup", "52W High Breakout", "Double Bottom"]
             selected_patterns = st.multiselect("Select Patterns", pattern_options, default=pattern_options)
         with col4:
             timeframe_option = st.radio("Pattern Timeframe", ["Daily", "Weekly", "Both"], index=0, horizontal=True)
@@ -401,7 +402,8 @@ def main():
                         ("Cup and Handle", is_cup_and_handle),
                         ("Range Breakout", is_range_breakout),
                         ("52W High Breakout", is_52w_high_breakout),
-                        ("IPO Breakout", is_ipo_breakout)
+                        ("IPO Breakout", is_ipo_breakout),
+                        ("Double Bottom", is_double_bottom)
                     ]
                     for p_name, p_func in strategies_search:
                         f_d, r_d = p_func(df_daily)
@@ -480,7 +482,8 @@ def main():
                     strategies = [
                         ("Cup and Handle", is_cup_and_handle),
                         ("Range Breakout", is_range_breakout),
-                        ("52W High Breakout", is_52w_high_breakout)
+                        ("52W High Breakout", is_52w_high_breakout),
+                        ("Double Bottom", is_double_bottom)
                     ]
                     for p_name, p_func in strategies:
                         if p_name in selected_patterns:
