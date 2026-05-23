@@ -317,12 +317,13 @@ def is_52w_high_breakout(df):
 
 def is_ipo_breakout(df):
     """
-    IPO Breakout Pattern (Shadowfax Style):
-    - Identifies stocks breaking out of their All-Time High (ATH).
-    - Verge: Tight consolidation (low volatility) near ATH with volume dry-up.
-    - Breakout: Price cross ATH with volume confirmation.
+    IPO Breakout Strategy:
+    1. Selection: IPO within last 12 months (handled in app.py).
+    2. Liquidity: Avg daily volume > 60k (last 20 days).
+    3. Consolidation: Tight range (up to 20%) for up to 4 months.
+    4. Entry: Breakout of ATH with bullish candle >= 3%.
     """
-    if len(df) < 15: return False, {}
+    if len(df) < 10: return False, {}
 
     close_prices = df['Close']
     high_prices = df['High']
@@ -335,50 +336,52 @@ def is_ipo_breakout(df):
         low_prices = low_prices.iloc[:, 0]
         volumes = volumes.iloc[:, 0]
 
-    # All-time high up to 3 days ago
-    breakout_window = 3
+    # Liquidity check
+    avg_volume = volumes.tail(20).mean()
+    if avg_volume < 60000:
+        return False, {}
+
+    # ATH excluding the most recent candle
+    breakout_window = 1
     historic_ath = high_prices.iloc[:-breakout_window].max()
 
     current_price = close_prices.iloc[-1]
-    avg_volume = volumes.tail(20).mean()
-    current_volume = volumes.iloc[-1]
+    prev_price = close_prices.iloc[-2]
 
-    # Consolidation characteristics (last 10 days excluding breakout window)
-    consol_period = close_prices.iloc[-10-breakout_window : -breakout_window]
-    if len(consol_period) < 5: return False, {}
+    # Consolidation: up to 4 months (approx 80 trading days)
+    # We look at the period before the breakout window
+    lookback = min(80, len(df) - breakout_window)
+    if lookback < 5: return False, {}
 
-    # 1. Volatility check: High and Low in consolidation should be tight
-    consol_high = high_prices.iloc[-10-breakout_window : -breakout_window].max()
-    consol_low = low_prices.iloc[-10-breakout_window : -breakout_window].min()
-    consol_range_pct = (consol_high - consol_low) / consol_high
+    consol_period_high = high_prices.iloc[-lookback-breakout_window : -breakout_window].max()
+    consol_period_low = low_prices.iloc[-lookback-breakout_window : -breakout_window].min()
+    consol_range_pct = (consol_period_high - consol_period_low) / consol_period_high
 
-    # 2. Volume dry-up: Avg volume in consolidation should be lower than previous avg
-    prior_avg_vol = volumes.iloc[:-10-breakout_window].tail(30).mean()
-    consol_avg_vol = volumes.iloc[-10-breakout_window : -breakout_window].mean()
+    # Requirement: Consolidation range up to 20%
+    if consol_range_pct > 0.20:
+        return False, {}
 
-    # Shadowsax style usually has a "VCP" like tightening
-    is_tight = consol_range_pct < 0.15 # 15% range is relatively tight for IPOs
-    volume_dry_up = consol_avg_vol < prior_avg_vol * 1.2 # Not strictly a "dry up" but not a spike
+    # Entry Trigger: Breakout of ATH with bullish candle >= 3%
+    is_ath_breakout = current_price > historic_ath
+    is_bullish_candle = (current_price - prev_price) / prev_price >= 0.03
 
-    # Breakout check
-    if current_price > historic_ath and current_volume > avg_volume:
+    if is_ath_breakout and is_bullish_candle:
         return True, {
-            'start': df.index[-10-breakout_window],
+            'start': df.index[-lookback-breakout_window],
             'end': df.index[-1],
-            'label': 'IPO ATH Breakout',
+            'label': 'IPO Breakout',
             'status': 'Broken',
             'breakout_price': float(historic_ath)
         }
 
-    # Verge check: Within 3% of ATH and showing tightness
-    if current_price >= historic_ath * 0.97 and current_price <= historic_ath * 1.02:
-        if is_tight and volume_dry_up:
-            return True, {
-                'start': df.index[-10-breakout_window],
-                'end': df.index[-1],
-                'label': 'IPO ATH (Verge)',
-                'status': 'Verge',
-                'breakout_price': float(historic_ath)
-            }
+    # Verge Check: Within 2% of ATH and meets consolidation criteria
+    if current_price >= historic_ath * 0.98 and current_price <= historic_ath:
+        return True, {
+            'start': df.index[-lookback-breakout_window],
+            'end': df.index[-1],
+            'label': 'IPO (Verge)',
+            'status': 'Verge',
+            'breakout_price': float(historic_ath)
+        }
 
     return False, {}
