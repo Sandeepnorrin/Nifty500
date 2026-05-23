@@ -665,8 +665,15 @@ def main():
                                         st.write("Weekly chart not available (filtered out)")
 
     with tab_ipo:
-        st.subheader("🚀 Recent IPO Breakouts (Last 18 Months)")
-        st.info("Scanning **all NSE stocks** listed within the last 18 months for ATH breakout patterns (Shadowfax style).")
+        st.subheader("🚀 Recent IPO Breakouts (Last 12 Months)")
+        st.info("Scanning **all NSE stocks** listed within the last 12 months for ATH breakout patterns.")
+        st.markdown("""
+        **Strategy Criteria:**
+        - **IPO Date:** Listed within the last 12 months.
+        - **Liquidity:** Average daily volume > 60,000 shares.
+        - **Consolidation:** Price range within 20% for up to 4 months.
+        - **Trigger:** Breakout of All-Time High (ATH) with a bullish candle >= 3%.
+        """)
 
         if st.button("Scan All Recent IPOs"):
             with st.status("Fetching full market list and scanning IPOs...", expanded=True) as status:
@@ -680,10 +687,10 @@ def main():
                     # Fallback if format is different
                     all_nse['ListingDate'] = pd.to_datetime(all_nse['DATE OF LISTING'])
 
-                eighteen_months_ago = pd.Timestamp.now() - pd.DateOffset(months=18)
+                twelve_months_ago = pd.Timestamp.now() - pd.DateOffset(months=12)
                 # Filter for mainboard: Market Lot is 1 and Symbol doesn't suggest SME (though lot is better indicator)
                 recent_ipos = all_nse[
-                    (all_nse['ListingDate'] >= eighteen_months_ago) &
+                    (all_nse['ListingDate'] >= twelve_months_ago) &
                     (all_nse['MARKET LOT'] == 1)
                 ]
 
