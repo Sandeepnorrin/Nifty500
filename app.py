@@ -5,7 +5,8 @@ from plotly.subplots import make_subplots
 from data_fetcher import get_nifty500_stocks, get_all_nse_stocks, get_stock_fundamentals, get_price_data, get_sector_data
 from fundamental_analysis import filter_fundamentals, get_holding_category
 from technical_analysis import (calculate_ema, is_cup_and_handle, is_range_breakout,
-                                is_tight_setup, is_ema_aligned, is_52w_high_breakout, is_ipo_breakout)
+                                is_tight_setup, is_ema_aligned, is_52w_high_breakout, is_ipo_breakout,
+                                is_double_bottom, is_volume_price_spike)
 from sector_mapping import get_sector_index
 from notion_integration import NotionSync
 import time
@@ -35,10 +36,15 @@ def create_chart(df, symbol, timeframe="Daily", regions=None):
     # Focus on current period (last 1 year for daily, last 2 years for weekly)
     if not df.empty:
         last_date = df.index[-1]
+        first_date = df.index[0]
         if timeframe == "Daily":
             start_date = last_date - pd.DateOffset(years=1)
         else:
             start_date = last_date - pd.DateOffset(years=2)
+
+        # Ensure start_date is not before first_date
+        start_date = max(start_date, first_date)
+
         fig.update_xaxes(range=[start_date, last_date], row=1, col=1)
         fig.update_xaxes(range=[start_date, last_date], row=2, col=1)
 
@@ -279,7 +285,7 @@ def main():
             high_filter = st.slider("Max % Away from 52W High", 0, 100, 20)
             change_options = ["<= 1.5%", "1.5% - 3%", "3% - 7%", "7% - 10%", "> 10%"]
             selected_change = st.multiselect("Combined Holding Change", change_options, default=change_options)
-            pattern_options = ["Cup and Handle", "Range Breakout", "Tight Setup", "52W High Breakout"]
+            pattern_options = ["Cup and Handle", "Range Breakout", "Tight Setup", "52W High Breakout", "Double Bottom"]
             selected_patterns = st.multiselect("Select Patterns", pattern_options, default=pattern_options)
         with col4:
             timeframe_option = st.radio("Pattern Timeframe", ["Daily", "Weekly", "Both"], index=0, horizontal=True)
@@ -325,7 +331,7 @@ def main():
         filtered_df = filtered_df[filtered_df['Category'] != "None"]
 
     # Tabs for different views
-    tab1, tab2, tab_ipo, tab3 = st.tabs(["📊 Nifty 500 Data", "🔍 Pattern Scanner", "🚀 Recent IPOs", "📈 Stock Research"])
+    tab1, tab2, tab_spike, tab_ipo, tab3 = st.tabs(["📊 Nifty 500 Data", "🔍 Pattern Scanner", "⚡ Spike Scanner", "🚀 Recent IPOs", "📈 Stock Research"])
 
     with tab1:
         st.subheader("Nifty 500 Fundamental Overview")
@@ -401,7 +407,8 @@ def main():
                         ("Cup and Handle", is_cup_and_handle),
                         ("Range Breakout", is_range_breakout),
                         ("52W High Breakout", is_52w_high_breakout),
-                        ("IPO Breakout", is_ipo_breakout)
+                        ("IPO Breakout", is_ipo_breakout),
+                        ("Double Bottom", is_double_bottom)
                     ]
                     for p_name, p_func in strategies_search:
                         f_d, r_d = p_func(df_daily)
@@ -480,7 +487,8 @@ def main():
                     strategies = [
                         ("Cup and Handle", is_cup_and_handle),
                         ("Range Breakout", is_range_breakout),
-                        ("52W High Breakout", is_52w_high_breakout)
+                        ("52W High Breakout", is_52w_high_breakout),
+                        ("Double Bottom", is_double_bottom)
                     ]
                     for p_name, p_func in strategies:
                         if p_name in selected_patterns:
@@ -664,9 +672,85 @@ def main():
                                     else:
                                         st.write("Weekly chart not available (filtered out)")
 
+    with tab_spike:
+        st.subheader("⚡ Daily Volume & Price Spike Scanner")
+        st.info("Scanning Nifty 500 stocks for a >3% price increase and >1.5x average volume on the latest trading day.")
+
+        if st.button("Run Spike Scanner"):
+            with st.status("Analyzing Nifty 500...", expanded=True) as status:
+                nifty500 = get_nifty500_stocks()
+                spike_results = []
+                progress_bar_spike = st.progress(0)
+                total_nifty = len(nifty500)
+
+                for idx, (idx_n5, row) in enumerate(nifty500.iterrows()):
+                    symbol = row['Symbol']
+                    progress_bar_spike.progress((idx + 1) / total_nifty, text=f"Checking {symbol} ({idx+1}/{total_nifty})")
+
+                    df_daily = get_price_data(symbol, period="1y", interval="1d")
+                    if df_daily.empty: continue
+
+                    found, region = is_volume_price_spike(df_daily)
+                    if found:
+                        # Get fundamental data from fundamentals_df
+                        fund_row = fundamentals_df[fundamentals_df['Symbol'] == symbol]
+                        roe = fund_row['ROE (%)'].iloc[0] if not fund_row.empty else "N/A"
+                        roce = fund_row['ROCE (%)'].iloc[0] if not fund_row.empty else "N/A"
+                        comb_change = fund_row['Combined Change (%)'].iloc[0] if not fund_row.empty else "N/A"
+
+                        spike_results.append({
+                            'Symbol': symbol,
+                            'Industry': row['Industry'],
+                            'ROE (%)': roe,
+                            'ROCE (%)': roce,
+                            'Combined Change (%)': comb_change,
+                            'Price Change %': f"{((df_daily['Close'].iloc[-1] - df_daily['Close'].iloc[-2]) / df_daily['Close'].iloc[-2] * 100):.2f}%",
+                            'Volume Ratio': f"{(df_daily['Volume'].iloc[-1] / df_daily['Volume'].tail(21).iloc[:-1].mean()):.2f}x",
+                            'Current Price': df_daily['Close'].iloc[-1],
+                            'df_daily': df_daily,
+                            'region': region
+                        })
+                    time.sleep(0.05)
+                status.update(label=f"Scan complete! Found {len(spike_results)} stocks.", state="complete", expanded=False)
+
+            if not spike_results:
+                st.warning("No stocks found with a spike today.")
+            else:
+                st.success(f"Found {len(spike_results)} spikes!")
+
+                # Display Table
+                spike_table = pd.DataFrame([{
+                    'Symbol': r['Symbol'],
+                    'Industry': r['Industry'],
+                    'Price Change': r['Price Change %'],
+                    'Volume Ratio': r['Volume Ratio'],
+                    'CMP': r['Current Price'],
+                    'ROE (%)': r['ROE (%)'],
+                    'ROCE (%)': r['ROCE (%)'],
+                    'Combined Change (%)': r['Combined Change (%)']
+                } for r in spike_results])
+                st.dataframe(spike_table, use_container_width=True, hide_index=True)
+
+                st.divider()
+
+                # Display Charts
+                for res in spike_results:
+                    header_str = f"**{res['Symbol']}** ({res['Industry']}) | Price: {res['Price Change %']} | Vol: {res['Volume Ratio']} | ROE: {res['ROE (%)']}% | ROCE: {res['ROCE (%)']}% | Inst. Change: {res['Combined Change (%)']}%"
+                    with st.expander(header_str):
+                        df_d = calculate_ema(res['df_daily'])
+                        fig_d = create_chart(df_d, res['Symbol'], "Daily", regions=[res['region']])
+                        if fig_d: st.plotly_chart(fig_d, use_container_width=True)
+
     with tab_ipo:
-        st.subheader("🚀 Recent IPO Breakouts (Last 18 Months)")
-        st.info("Scanning **all NSE stocks** listed within the last 18 months for ATH breakout patterns (Shadowfax style).")
+        st.subheader("🚀 Recent IPO Breakouts (Last 12 Months)")
+        st.info("Scanning **all NSE stocks** listed within the last 12 months for ATH breakout patterns.")
+        st.markdown("""
+        **Strategy Criteria:**
+        - **IPO Date:** Listed within the last 12 months.
+        - **Liquidity:** Average daily volume > 60,000 shares.
+        - **Consolidation:** Price range within 20% for up to 4 months.
+        - **Trigger:** Breakout of All-Time High (ATH) with a bullish candle >= 3%.
+        """)
 
         if st.button("Scan All Recent IPOs"):
             with st.status("Fetching full market list and scanning IPOs...", expanded=True) as status:
@@ -680,10 +764,10 @@ def main():
                     # Fallback if format is different
                     all_nse['ListingDate'] = pd.to_datetime(all_nse['DATE OF LISTING'])
 
-                eighteen_months_ago = pd.Timestamp.now() - pd.DateOffset(months=18)
+                twelve_months_ago = pd.Timestamp.now() - pd.DateOffset(months=12)
                 # Filter for mainboard: Market Lot is 1 and Symbol doesn't suggest SME (though lot is better indicator)
                 recent_ipos = all_nse[
-                    (all_nse['ListingDate'] >= eighteen_months_ago) &
+                    (all_nse['ListingDate'] >= twelve_months_ago) &
                     (all_nse['MARKET LOT'] == 1)
                 ]
 
