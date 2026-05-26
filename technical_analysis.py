@@ -385,3 +385,125 @@ def is_ipo_breakout(df):
         }
 
     return False, {}
+
+def is_volume_price_spike(df):
+    """
+    Volume & Price Spike:
+    - Current day price increase >= 3%
+    - Current day volume >= 1.5x of 20-day average volume.
+    """
+    if len(df) < 21: return False, {}
+
+    close_prices = df['Close']
+    volumes = df['Volume']
+
+    if isinstance(close_prices, pd.DataFrame):
+        close_prices = close_prices.iloc[:, 0]
+        volumes = volumes.iloc[:, 0]
+
+    current_price = close_prices.iloc[-1]
+    prev_price = close_prices.iloc[-2]
+    current_volume = volumes.iloc[-1]
+    avg_volume = volumes.tail(21).iloc[:-1].mean() # Average of previous 20 days
+
+    price_change_pct = (current_price - prev_price) / prev_price
+    volume_ratio = current_volume / avg_volume if avg_volume > 0 else 0
+
+    if price_change_pct >= 0.03 and volume_ratio >= 1.5:
+        return True, {
+            'start': df.index[-1],
+            'end': df.index[-1],
+            'label': f"Spike (+{price_change_pct*100:.1f}%, {volume_ratio:.1f}x Vol)",
+            'status': 'Broken', # Highlighting the spike
+            'breakout_price': float(prev_price)
+        }
+
+    return False, {}
+
+def is_double_bottom(df):
+    """
+    Double Bottom Reversal Pattern:
+    1. Downtrend: Price below 50 EMA before pattern starts.
+    2. "W" Shape: Two bottoms within 3% range of each other.
+    3. Duration: Pattern forms within approx 3 months (60 sessions).
+    4. Neckline: Highest point between the two bottoms.
+    5. Breakout: Price crosses neckline with volume > 1.2x average.
+    """
+    if len(df) < 60: return False, {}
+
+    if 'EMA50' not in df.columns:
+        df = calculate_ema(df)
+
+    close_prices = df['Close']
+    low_prices = df['Low']
+    high_prices = df['High']
+    volumes = df['Volume']
+    ema50 = df['EMA50']
+
+    if isinstance(close_prices, pd.DataFrame):
+        close_prices = close_prices.iloc[:, 0]
+        low_prices = low_prices.iloc[:, 0]
+        high_prices = high_prices.iloc[:, 0]
+        volumes = volumes.iloc[:, 0]
+        ema50 = ema50.iloc[:, 0]
+
+    lookback = 60 # 3 months approx
+    prices_subset = close_prices.tail(lookback)
+    lows_subset = low_prices.tail(lookback)
+    highs_subset = high_prices.tail(lookback)
+
+    # 1. Check for Downtrend before pattern (Price below 50 EMA)
+    idx_start = len(df) - lookback
+    # Check if price was below EMA50 at the start of our lookback period
+    if close_prices.iloc[idx_start] > ema50.iloc[idx_start]:
+        return False, {}
+
+    # 2. Find two bottoms
+    # Divide lookback into two halves to find two distinct bottom candidates
+    first_half = lows_subset.iloc[:lookback//2]
+    second_half = lows_subset.iloc[lookback//2:]
+
+    b1_idx = first_half.argmin()
+    b1_price = first_half.iloc[b1_idx]
+    b1_idx_abs = lows_subset.index.get_loc(first_half.index[b1_idx])
+
+    b2_idx = second_half.argmin()
+    b2_price = second_half.iloc[b2_idx]
+    b2_idx_abs = lows_subset.index.get_loc(second_half.index[b2_idx])
+
+    # Bottoms proximity check (within 3%)
+    if abs(b1_price - b2_price) / max(b1_price, b2_price) > 0.03:
+        return False, {}
+
+    # 3. Find Neckline (highest point between b1 and b2)
+    between_bottoms = highs_subset.iloc[b1_idx_abs : b2_idx_abs]
+    if len(between_bottoms) < 5: return False, {}
+
+    neckline_price = between_bottoms.max()
+
+    current_price = close_prices.iloc[-1]
+    avg_volume = volumes.tail(20).mean()
+    current_volume = volumes.iloc[-1]
+
+    # 4. Breakout Check
+    if current_price > neckline_price:
+        if current_volume > avg_volume * 1.2:
+            return True, {
+                'start': lows_subset.index[b1_idx_abs],
+                'end': lows_subset.index[-1],
+                'label': 'Double Bottom',
+                'status': 'Broken',
+                'breakout_price': float(neckline_price)
+            }
+
+    # 5. Verge Check
+    if current_price >= neckline_price * 0.98 and current_price <= neckline_price:
+        return True, {
+            'start': lows_subset.index[b1_idx_abs],
+            'end': lows_subset.index[-1],
+            'label': 'Double Bottom (Verge)',
+            'status': 'Verge',
+            'breakout_price': float(neckline_price)
+        }
+
+    return False, {}
