@@ -6,7 +6,7 @@ from data_fetcher import get_nifty500_stocks, get_all_nse_stocks, get_stock_fund
 from fundamental_analysis import filter_fundamentals, get_holding_category
 from technical_analysis import (calculate_ema, is_cup_and_handle, is_range_breakout,
                                 is_tight_setup, is_ema_aligned, is_52w_high_breakout, is_ipo_breakout,
-                                is_double_bottom)
+                                is_double_bottom, is_volume_price_spike)
 from sector_mapping import get_sector_index
 from notion_integration import NotionSync
 import time
@@ -326,7 +326,7 @@ def main():
         filtered_df = filtered_df[filtered_df['Category'] != "None"]
 
     # Tabs for different views
-    tab1, tab2, tab_ipo, tab3 = st.tabs(["📊 Nifty 500 Data", "🔍 Pattern Scanner", "🚀 Recent IPOs", "📈 Stock Research"])
+    tab1, tab2, tab_spike, tab_ipo, tab3 = st.tabs(["📊 Nifty 500 Data", "🔍 Pattern Scanner", "⚡ Spike Scanner", "🚀 Recent IPOs", "📈 Stock Research"])
 
     with tab1:
         st.subheader("Nifty 500 Fundamental Overview")
@@ -666,6 +666,62 @@ def main():
                                         if chart_weekly: st.plotly_chart(chart_weekly, width="stretch")
                                     else:
                                         st.write("Weekly chart not available (filtered out)")
+
+    with tab_spike:
+        st.subheader("⚡ Daily Volume & Price Spike Scanner")
+        st.info("Scanning Nifty 500 stocks for a >3% price increase and >1.5x average volume on the latest trading day.")
+
+        if st.button("Run Spike Scanner"):
+            with st.status("Analyzing Nifty 500...", expanded=True) as status:
+                nifty500 = get_nifty500_stocks()
+                spike_results = []
+                progress_bar_spike = st.progress(0)
+                total_nifty = len(nifty500)
+
+                for idx, (idx_n5, row) in enumerate(nifty500.iterrows()):
+                    symbol = row['Symbol']
+                    progress_bar_spike.progress((idx + 1) / total_nifty, text=f"Checking {symbol} ({idx+1}/{total_nifty})")
+
+                    df_daily = get_price_data(symbol, period="60d", interval="1d")
+                    if df_daily.empty: continue
+
+                    found, region = is_volume_price_spike(df_daily)
+                    if found:
+                        spike_results.append({
+                            'Symbol': symbol,
+                            'Industry': row['Industry'],
+                            'Price Change %': f"{((df_daily['Close'].iloc[-1] - df_daily['Close'].iloc[-2]) / df_daily['Close'].iloc[-2] * 100):.2f}%",
+                            'Volume Ratio': f"{(df_daily['Volume'].iloc[-1] / df_daily['Volume'].tail(21).iloc[:-1].mean()):.2f}x",
+                            'Current Price': df_daily['Close'].iloc[-1],
+                            'df_daily': df_daily,
+                            'region': region
+                        })
+                    time.sleep(0.05)
+                status.update(label=f"Scan complete! Found {len(spike_results)} stocks.", state="complete", expanded=False)
+
+            if not spike_results:
+                st.warning("No stocks found with a spike today.")
+            else:
+                st.success(f"Found {len(spike_results)} spikes!")
+
+                # Display Table
+                spike_table = pd.DataFrame([{
+                    'Symbol': r['Symbol'],
+                    'Industry': r['Industry'],
+                    'Price Change': r['Price Change %'],
+                    'Volume Ratio': r['Volume Ratio'],
+                    'CMP': r['Current Price']
+                } for r in spike_results])
+                st.dataframe(spike_table, use_container_width=True, hide_index=True)
+
+                st.divider()
+
+                # Display Charts
+                for res in spike_results:
+                    with st.expander(f"**{res['Symbol']}** ({res['Industry']}) | {res['Price Change %']} | {res['Volume Ratio']} Vol"):
+                        df_d = calculate_ema(res['df_daily'])
+                        fig_d = create_chart(df_d, res['Symbol'], "Daily", regions=[res['region']])
+                        if fig_d: st.plotly_chart(fig_d, use_container_width=True)
 
     with tab_ipo:
         st.subheader("🚀 Recent IPO Breakouts (Last 12 Months)")

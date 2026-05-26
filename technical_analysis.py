@@ -386,6 +386,40 @@ def is_ipo_breakout(df):
 
     return False, {}
 
+def is_volume_price_spike(df):
+    """
+    Volume & Price Spike:
+    - Current day price increase >= 3%
+    - Current day volume >= 1.5x of 20-day average volume.
+    """
+    if len(df) < 21: return False, {}
+
+    close_prices = df['Close']
+    volumes = df['Volume']
+
+    if isinstance(close_prices, pd.DataFrame):
+        close_prices = close_prices.iloc[:, 0]
+        volumes = volumes.iloc[:, 0]
+
+    current_price = close_prices.iloc[-1]
+    prev_price = close_prices.iloc[-2]
+    current_volume = volumes.iloc[-1]
+    avg_volume = volumes.tail(21).iloc[:-1].mean() # Average of previous 20 days
+
+    price_change_pct = (current_price - prev_price) / prev_price
+    volume_ratio = current_volume / avg_volume if avg_volume > 0 else 0
+
+    if price_change_pct >= 0.03 and volume_ratio >= 1.5:
+        return True, {
+            'start': df.index[-1],
+            'end': df.index[-1],
+            'label': f"Spike (+{price_change_pct*100:.1f}%, {volume_ratio:.1f}x Vol)",
+            'status': 'Broken', # Highlighting the spike
+            'breakout_price': float(prev_price)
+        }
+
+    return False, {}
+
 def is_double_bottom(df):
     """
     Double Bottom Reversal Pattern:
