@@ -36,10 +36,15 @@ def create_chart(df, symbol, timeframe="Daily", regions=None):
     # Focus on current period (last 1 year for daily, last 2 years for weekly)
     if not df.empty:
         last_date = df.index[-1]
+        first_date = df.index[0]
         if timeframe == "Daily":
             start_date = last_date - pd.DateOffset(years=1)
         else:
             start_date = last_date - pd.DateOffset(years=2)
+
+        # Ensure start_date is not before first_date
+        start_date = max(start_date, first_date)
+
         fig.update_xaxes(range=[start_date, last_date], row=1, col=1)
         fig.update_xaxes(range=[start_date, last_date], row=2, col=1)
 
@@ -682,14 +687,23 @@ def main():
                     symbol = row['Symbol']
                     progress_bar_spike.progress((idx + 1) / total_nifty, text=f"Checking {symbol} ({idx+1}/{total_nifty})")
 
-                    df_daily = get_price_data(symbol, period="60d", interval="1d")
+                    df_daily = get_price_data(symbol, period="1y", interval="1d")
                     if df_daily.empty: continue
 
                     found, region = is_volume_price_spike(df_daily)
                     if found:
+                        # Get fundamental data from fundamentals_df
+                        fund_row = fundamentals_df[fundamentals_df['Symbol'] == symbol]
+                        roe = fund_row['ROE (%)'].iloc[0] if not fund_row.empty else "N/A"
+                        roce = fund_row['ROCE (%)'].iloc[0] if not fund_row.empty else "N/A"
+                        comb_change = fund_row['Combined Change (%)'].iloc[0] if not fund_row.empty else "N/A"
+
                         spike_results.append({
                             'Symbol': symbol,
                             'Industry': row['Industry'],
+                            'ROE (%)': roe,
+                            'ROCE (%)': roce,
+                            'Combined Change (%)': comb_change,
                             'Price Change %': f"{((df_daily['Close'].iloc[-1] - df_daily['Close'].iloc[-2]) / df_daily['Close'].iloc[-2] * 100):.2f}%",
                             'Volume Ratio': f"{(df_daily['Volume'].iloc[-1] / df_daily['Volume'].tail(21).iloc[:-1].mean()):.2f}x",
                             'Current Price': df_daily['Close'].iloc[-1],
@@ -710,7 +724,10 @@ def main():
                     'Industry': r['Industry'],
                     'Price Change': r['Price Change %'],
                     'Volume Ratio': r['Volume Ratio'],
-                    'CMP': r['Current Price']
+                    'CMP': r['Current Price'],
+                    'ROE (%)': r['ROE (%)'],
+                    'ROCE (%)': r['ROCE (%)'],
+                    'Combined Change (%)': r['Combined Change (%)']
                 } for r in spike_results])
                 st.dataframe(spike_table, use_container_width=True, hide_index=True)
 
@@ -718,7 +735,8 @@ def main():
 
                 # Display Charts
                 for res in spike_results:
-                    with st.expander(f"**{res['Symbol']}** ({res['Industry']}) | {res['Price Change %']} | {res['Volume Ratio']} Vol"):
+                    header_str = f"**{res['Symbol']}** ({res['Industry']}) | Price: {res['Price Change %']} | Vol: {res['Volume Ratio']} | ROE: {res['ROE (%)']}% | ROCE: {res['ROCE (%)']}% | Inst. Change: {res['Combined Change (%)']}%"
+                    with st.expander(header_str):
                         df_d = calculate_ema(res['df_daily'])
                         fig_d = create_chart(df_d, res['Symbol'], "Daily", regions=[res['region']])
                         if fig_d: st.plotly_chart(fig_d, use_container_width=True)
