@@ -752,11 +752,9 @@ def main():
         - **Trigger:** Breakout of All-Time High (ATH) with a bullish candle 3% to 5%.
         """)
 
-        refresh_nse = st.checkbox("Force Refresh NSE IPO List", value=False)
-
         if st.button("Scan All Recent IPOs"):
-            with st.status("Fetching full market list and scanning IPOs...", expanded=True) as status:
-                all_nse = get_all_nse_stocks(refresh=refresh_nse)
+            with st.status("Fetching fresh market list and scanning IPOs...", expanded=True) as status:
+                all_nse = get_all_nse_stocks(refresh=True)
                 # Filter by listing date if available in EQUITY_L.csv
                 # EQUITY_L format: DATE OF LISTING (e.g., 06-OCT-2008)
 
