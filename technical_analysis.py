@@ -319,9 +319,9 @@ def is_ipo_breakout(df):
     """
     IPO Breakout Strategy:
     1. Selection: IPO within last 12 months (handled in app.py).
-    2. Liquidity: Avg daily volume > 60k (last 20 days).
-    3. Consolidation: Tight range (up to 20%) for up to 4 months.
-    4. Entry: Breakout of ATH with bullish candle >= 3%.
+    2. Liquidity: Avg daily volume > 75k (last 20 days).
+    3. Consolidation: Tight range (approx 5% to 8%) for up to 4 months.
+    4. Entry: Breakout of ATH with bullish candle 3% to 5%.
     """
     if len(df) < 10: return False, {}
 
@@ -338,7 +338,7 @@ def is_ipo_breakout(df):
 
     # Liquidity check
     avg_volume = volumes.tail(20).mean()
-    if avg_volume < 60000:
+    if avg_volume < 75000:
         return False, {}
 
     # ATH excluding the most recent candle
@@ -357,13 +357,17 @@ def is_ipo_breakout(df):
     consol_period_low = low_prices.iloc[-lookback-breakout_window : -breakout_window].min()
     consol_range_pct = (consol_period_high - consol_period_low) / consol_period_high
 
-    # Requirement: Consolidation range up to 20%
-    if consol_range_pct > 0.20:
+    # Requirement: Consolidation range approximately 5% to 8%
+    # Using a slightly wider range [0.04, 0.09] to capture "approximately"
+    if not (0.04 <= consol_range_pct <= 0.09):
         return False, {}
 
-    # Entry Trigger: Breakout of ATH with bullish candle >= 3%
+    # Entry Trigger: Breakout of ATH with bullish candle 3% to 5%
     is_ath_breakout = current_price > historic_ath
-    is_bullish_candle = (current_price - prev_price) / prev_price >= 0.03
+    candle_change = (current_price - prev_price) / prev_price
+    # Requirement: Bullish candle of 3% to 5%
+    # Again, allowing slight flexibility [0.028, 0.055]
+    is_bullish_candle = (0.028 <= candle_change <= 0.055)
 
     if is_ath_breakout and is_bullish_candle:
         return True, {

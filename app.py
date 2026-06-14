@@ -747,14 +747,16 @@ def main():
         st.markdown("""
         **Strategy Criteria:**
         - **IPO Date:** Listed within the last 12 months.
-        - **Liquidity:** Average daily volume > 60,000 shares.
-        - **Consolidation:** Price range within 20% for up to 4 months.
-        - **Trigger:** Breakout of All-Time High (ATH) with a bullish candle >= 3%.
+        - **Liquidity:** Average daily volume > 75,000 shares.
+        - **Consolidation:** Price range approximately 5% to 8% for up to 4 months.
+        - **Trigger:** Breakout of All-Time High (ATH) with a bullish candle 3% to 5%.
         """)
+
+        refresh_nse = st.checkbox("Force Refresh NSE IPO List", value=False)
 
         if st.button("Scan All Recent IPOs"):
             with st.status("Fetching full market list and scanning IPOs...", expanded=True) as status:
-                all_nse = get_all_nse_stocks()
+                all_nse = get_all_nse_stocks(refresh=refresh_nse)
                 # Filter by listing date if available in EQUITY_L.csv
                 # EQUITY_L format: DATE OF LISTING (e.g., 06-OCT-2008)
 
@@ -800,10 +802,33 @@ def main():
                         # Get weekly data
                         df_ipo_wk = get_price_data(symbol, period="max", interval="1wk")
 
+                        # Get fundamental data for IPO
+                        ipo_funds = get_stock_fundamentals(symbol)
+                        roe = 0.0
+                        roce = 0.0
+                        comb_change = 0.0
+                        category = "None"
+
+                        if ipo_funds:
+                            roe = ipo_funds.get('ROE') or 0.0
+                            roce = ipo_funds.get('ROCE') or 0.0
+                            fii = ipo_funds.get('FII_Holdings', [])
+                            dii = ipo_funds.get('DII_Holdings', [])
+
+                            fii = ([0.0] * (4 - len(fii))) + fii
+                            dii = ([0.0] * (4 - len(dii))) + dii
+
+                            category = get_holding_category(fii, dii)
+                            comb_change = (fii[3] - fii[2]) + (dii[3] - dii[2])
+
                         ipo_results.append({
                             'Symbol': symbol,
                             'Name': row['NAME OF COMPANY'],
                             'Listing Date': row['DATE OF LISTING'],
+                            'ROE (%)': roe,
+                            'ROCE (%)': roce,
+                            'Combined Change (%)': round(float(comb_change), 2),
+                            'Category': category,
                             'Pattern': region['label'],
                             'Status': region['status'],
                             'Breakout Price': region['breakout_price'],
@@ -821,9 +846,27 @@ def main():
                 st.warning("No recent IPOs found matching the criteria.")
             else:
                 st.success(f"Found {len(ipo_results)} Recent IPO Patterns!")
+
+                # Summary Table for IPOs
+                ipo_table = pd.DataFrame([{
+                    'Symbol': r['Symbol'],
+                    'Name': r['Name'],
+                    'Listed': r['Listing Date'],
+                    'ROE (%)': r['ROE (%)'],
+                    'ROCE (%)': r['ROCE (%)'],
+                    'Inst. Chg': r['Combined Change (%)'],
+                    'Category': r['Category'],
+                    'CMP': f"{r['Current Price']:.2f}",
+                    'Breakout': f"{r['Breakout Price']:.2f}"
+                } for r in ipo_results])
+                st.dataframe(ipo_table, use_container_width=True, hide_index=True)
+
+                st.divider()
+
                 for res in ipo_results:
-                    with st.expander(f"**{res['Symbol']}** ({res['Name']}) | {res['Pattern']} | CMP: {res['Current Price']:.2f}"):
-                        st.write(f"**Listed:** {res['Listing Date']} | **Breakout Price:** {res['Breakout Price']:.2f} | **Status:** {res['Status']}")
+                    header_str = f"**{res['Symbol']}** | {res['Pattern']} | ROE: {res['ROE (%)']}% | ROCE: {res['ROCE (%)']}% | Inst. Chg: {res['Combined Change (%)']}% | CMP: {res['Current Price']:.2f}"
+                    with st.expander(header_str):
+                        st.write(f"**Name:** {res['Name']} | **Listed:** {res['Listing Date']} | **Breakout Price:** {res['Breakout Price']:.2f} | **Status:** {res['Status']}")
                         col1, col2 = st.columns(2)
                         with col1:
                             df_d = calculate_ema(res['df_daily'])
